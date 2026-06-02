@@ -1,0 +1,111 @@
+using {{BASE_NS}}.Client.ApiClients;
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
+using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
+
+namespace {{BASE_NS}}.Client.Components.Pages;
+
+public partial class {{ENTITY}}Index : ComponentBase
+{
+    [Inject] public {{ENTITY}}ApiClient {{ENTITY}}Api { get; set; } = null!;
+    [Inject] public NavigationManager Nav { get; set; } = null!;
+    [Inject] public IJSRuntime JS { get; set; } = null!;
+
+    private List<{{ENTITY}}Model> all = [];
+    private List<{{ENTITY}}Model> filtered = [];
+    private string errorMessage = string.Empty;
+    private bool loading = true;
+
+    private string? sortBy;
+    private bool sortDesc;
+
+{{PROPS_FILTER_STATE}}
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        var result = await {{ENTITY}}Api.GetAllAsync(CancellationToken.None);
+        if (result.Success)
+        {
+            all = [.. result.Value];
+            ApplyFilter();
+            errorMessage = string.Empty;
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+        loading = false;
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<{{ENTITY}}Model> q = all;
+{{PROPS_FILTER_LOGIC}}
+        q = ApplySort(q);
+        filtered = [.. q];
+    }
+
+    private IEnumerable<{{ENTITY}}Model> ApplySort(IEnumerable<{{ENTITY}}Model> q)
+    {
+        if (string.IsNullOrEmpty(sortBy)) return q;
+        return sortBy switch
+        {
+{{PROPS_SORT_CASES}}
+            _ => q,
+        };
+    }
+
+    private void OnSort(string column)
+    {
+        if (sortBy == column)
+        {
+            sortDesc = !sortDesc;
+        }
+        else
+        {
+            sortBy = column;
+            sortDesc = false;
+        }
+        ApplyFilter();
+    }
+
+    private string SortIcon(string column) =>
+        sortBy != column ? "bi-arrow-down-up text-muted opacity-50"
+        : sortDesc ? "bi-arrow-down text-{{ACCENT}}"
+        : "bi-arrow-up text-{{ACCENT}}";
+
+    private void OnSearch() => ApplyFilter();
+
+    private void OnReset()
+    {
+{{PROPS_RESET_LOGIC}}
+        sortBy = null;
+        sortDesc = false;
+        ApplyFilter();
+    }
+
+    private void OnNew() => Nav.NavigateTo($"/{{entity}}/new");
+
+    private void OnEdit({{ENTITY}}Model item) => Nav.NavigateTo($"/{{entity}}/edit/{item.Id}");
+
+    private async Task OnDelete({{ENTITY}}Model item)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"¿Borrar {{ENTITY}} #{item.Id}?");
+        if (!confirmed) return;
+
+        var result = await {{ENTITY}}Api.DeleteAsync(item.Id, CancellationToken.None);
+        if (result.Success)
+        {
+            all.Remove(item);
+            ApplyFilter();
+            errorMessage = string.Empty;
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+    }
+}

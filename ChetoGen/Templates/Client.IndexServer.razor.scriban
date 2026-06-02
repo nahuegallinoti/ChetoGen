@@ -1,0 +1,151 @@
+@page "/{{entity}}"
+@rendermode InteractiveServer
+
+<PageTitle>{{ENTITY_PLURAL}}</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-2 border-bottom">
+    <h3 class="mb-0 d-flex align-items-center">
+        <i class="bi bi-{{ENTITY_ICON}} text-{{ACCENT}} me-2"></i>{{ENTITY_PLURAL}}
+    </h3>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LoadAsync" disabled="@loading" title="Refrescar">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+        <button type="button" class="btn btn-{{ACCENT}}" @onclick="OnNew">
+            <i class="bi bi-plus-lg me-1"></i> Nuevo
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-circle me-2"></i>
+        <div class="flex-grow-1">@errorMessage</div>
+        <button type="button" class="btn-close" aria-label="Close" @onclick="() => errorMessage = string.Empty"></button>
+    </div>
+}
+
+<div class="card mb-3 shadow-sm">
+    <div class="card-body">
+        <h6 class="card-subtitle mb-3 text-muted d-flex align-items-center">
+            <i class="bi bi-funnel me-2"></i>Filtros
+        </h6>
+        <div class="row g-3">
+{{PROPS_FILTER_FIELDS}}
+        </div>
+        <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
+            <button type="button" class="btn btn-{{ACCENT}} btn-sm" @onclick="OnSearch" disabled="@loading">
+                <i class="bi bi-search me-1"></i> Buscar
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OnReset" disabled="@loading">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Limpiar
+            </button>
+            <span class="ms-auto text-muted small">
+                @if (paged.Total == 0)
+                {
+                    <span>Sin resultados</span>
+                }
+                else
+                {
+                    <span>@(((paged.Page - 1) * paged.PageSize) + 1)–@Math.Min(paged.Page * paged.PageSize, paged.Total) de @paged.Total</span>
+                }
+            </span>
+        </div>
+    </div>
+</div>
+
+@if (loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-{{ACCENT}}" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Cargando {{entity_plural}}...</p>
+    </div>
+}
+else if (paged.Items.Count == 0)
+{
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-inbox display-5 d-block mb-2 opacity-50"></i>
+        <p class="mb-3">No se encontraron {{entity_plural}}.</p>
+        <div class="d-flex gap-2 justify-content-center">
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OnReset">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Limpiar filtros
+            </button>
+            <button type="button" class="btn btn-{{ACCENT}} btn-sm" @onclick="OnNew">
+                <i class="bi bi-plus-lg me-1"></i> Crear primero
+            </button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col" style="width:80px">#</th>
+{{PROPS_TABLE_HEAD}}
+                    <th scope="col" class="text-end" style="width:120px">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in paged.Items)
+                {
+                    <tr>
+                        <td class="text-muted small font-monospace">@item.Id</td>
+{{PROPS_TABLE_BODY}}
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-primary" title="Editar"
+                                    @onclick="() => OnEdit(item)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger ms-1" title="Borrar"
+                                    @onclick="() => OnDelete(item)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <div class="d-flex align-items-center gap-2 small text-muted">
+            <label for="pageSize" class="mb-0">Por página</label>
+            <select class="form-select form-select-sm w-auto" @bind="filter.PageSize" @bind:after="OnPageSizeChanged">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+        </div>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item @(paged.HasPrevious ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => GoToPage(1)" disabled="@(!paged.HasPrevious || loading)" title="Primera">
+                        <i class="bi bi-chevron-double-left"></i>
+                    </button>
+                </li>
+                <li class="page-item @(paged.HasPrevious ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => GoToPage(paged.Page - 1)" disabled="@(!paged.HasPrevious || loading)" title="Anterior">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Página @paged.Page de @Math.Max(paged.TotalPages, 1)</span></li>
+                <li class="page-item @(paged.HasNext ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => GoToPage(paged.Page + 1)" disabled="@(!paged.HasNext || loading)" title="Siguiente">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </li>
+                <li class="page-item @(paged.HasNext ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => GoToPage(paged.TotalPages)" disabled="@(!paged.HasNext || loading)" title="Última">
+                        <i class="bi bi-chevron-double-right"></i>
+                    </button>
+                </li>
+            </ul>
+        </nav>
+    </div>
+}

@@ -1,0 +1,81 @@
+{
+  // ============================================================================================
+  //  ChetoGen — REFERENCIA COMPLETA de configuración (chetogen.json)
+  //  --------------------------------------------------------------------------------------------
+  //  Copiá este archivo a la raíz de tu solución como "chetogen.json" y dejá sólo lo que necesites.
+  //  TODAS las claves son opcionales (incluso "baseNamespace", que se infiere del nombre del .slnx).
+  //  El parser acepta comentarios "//" y comas finales.
+  //
+  //  Esto es la config del archivo. Los FLAGS de línea de comandos son aparte:
+  //    chetogen generate <Entidad> [--id long|int|Guid] [-p "Nombre:tipo:flags"] [--filter-mode client|server]
+  //      [--page-size N] [--icon X] [--accent X] [--no-ui] [--no-nav] [--no-auth] [--event-bus]
+  //      [--dry-run] [-y|--yes] [--root <ruta>] [--config <ruta>]
+  //    chetogen init [--with-templates] [--base-namespace <NS>] [--force]
+  //    (ver "chetogen generate --help")
+  // ============================================================================================
+
+  // [casi obligatorio] Prefijo de namespace/proyectos de TU solución. Reemplaza {BaseNamespace} en
+  // todos lados. Si lo omitís, se infiere del nombre del archivo de solución (Acme.slnx -> "Acme").
+  "baseNamespace": "AspireApp",
+
+  // Patrones para ubicar la raíz de la solución caminando hacia arriba desde el directorio actual.
+  "rootMarkers": ["*.slnx", "*.sln"],
+
+  // Carpeta (relativa a este archivo, o absoluta) con templates propias que pisan/extienden el set
+  // integrado. ChetoGen busca cada template por nombre PRIMERO acá, y si no está, usa la integrada.
+  // null = usar siempre las integradas.
+  "templatesDirectory": "chetogen-templates",
+
+  // Proyecto que se muestra en el hint de "próximos pasos" al terminar de generar.
+  "appHostProject": "{BaseNamespace}.AppHost",
+
+  // <ProjectReference> que se agrega al .csproj de modelos en modo server (el {Entity}Filter hereda
+  // PagedQuery, que vive en el proyecto de paging). Sólo aplica en --filter-mode server.
+  "pagingProjectReference": "..\\{BaseNamespace}.Domain.Paging\\{BaseNamespace}.Domain.Paging.csproj",
+
+  // Pasos del pipeline a SALTEAR, por su "friendly label". Útil para recortar el slice generado.
+  // Labels disponibles:
+  //   Domain.Entity, Application.Model, Application.Contract, Application.Service, Application.Mapper,
+  //   Application.Persistence, Application.Filter (sólo server), DataAccess, Api.Controller,
+  //   Client.ApiClient, Client.Index.razor, Client.Index.razor.cs, Client.Edit.razor, Client.Edit.razor.cs
+  "excludeTemplates": [],
+
+  // Mutadores de archivos compartidos a SALTEAR, por su clave. Una arquitectura distinta (p. ej. MVC
+  // clásico) que no tiene estos archivos compartidos los excluye a todos.
+  // Claves disponibles: DbContext, DataAccessDI, ApplicationDI, MappersDI, ClientProgram, NavMenu, ModelsCsproj
+  "excludeMutators": [],
+
+  // Ruta de salida por cada "slot" lógico del pipeline. Se expanden {BaseNamespace} y {Entity};
+  // usá '/' como separador (se normaliza por SO). Estos son los DEFAULTS integrados — override sólo
+  // los que necesites (o remapealos a otra arquitectura, como hace el demo MVC).
+  "paths": {
+    "DomainEntity":            "{BaseNamespace}.Domain.Entities/{Entity}.cs",
+    "ApplicationModel":        "{BaseNamespace}.Application.Models/App/{Entity}.cs",
+    "ApplicationFilter":       "{BaseNamespace}.Application.Models/App/{Entity}Filter.cs",
+    "ApplicationContract":     "{BaseNamespace}.Application.Contracts/{Entity}/I{Entity}Service.cs",
+    "ApplicationService":      "{BaseNamespace}.Application.Implementations/{Entity}/{Entity}Service.cs",
+    "ApplicationMapper":       "{BaseNamespace}.Application.Mappers/{Entity}Mapper.cs",
+    "ApplicationPersistence":  "{BaseNamespace}.Application.Persistence/I{Entity}DA.cs",
+    "DataAccess":              "{BaseNamespace}.DataAccess.Implementations/{Entity}DA.cs",
+    "ApiController":           "{BaseNamespace}.Api/Controllers/{Entity}Controller.cs",
+    "ApiClient":               "{BaseNamespace}.Client.ApiClients/{Entity}ApiClient.cs",
+    "BlazorIndexRazor":        "{BaseNamespace}.Client/Components/Pages/{Entity}Index.razor",
+    "BlazorIndexCs":           "{BaseNamespace}.Client/Components/Pages/{Entity}Index.razor.cs",
+    "BlazorEditRazor":         "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor",
+    "BlazorEditCs":            "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor.cs",
+    "ApplicationModelsCsproj": "{BaseNamespace}.Application.Models/{BaseNamespace}.Application.Models.csproj",
+    "AppDbContext":            "{BaseNamespace}.DataAccess.Implementations/AppDbContext.cs",
+    "DataAccessDI":            "{BaseNamespace}.DataAccess.Implementations/DependencyInjection.cs",
+    "ApplicationDI":           "{BaseNamespace}.Application.Implementations/DependencyInjection.cs",
+    "MappersDI":               "{BaseNamespace}.Application.Mappers/DependencyInjection.cs",
+    "ClientProgram":           "{BaseNamespace}.Client/Program.cs",
+    "NavMenu":                 "{BaseNamespace}.Client/Components/Layout/NavMenu.razor"
+  },
+
+  // Tokens {{TOKEN}} estáticos extra, mergeados AL FINAL (ganan sobre los integrados, incluido BASE_NS).
+  // Sirven para inyectar placeholders propios en tus templates customizadas.
+  "tokens": {
+    // "COMPANY": "Gugu Inc.",
+    // "COPYRIGHT": "© 2026 Gugu"
+  }
+}

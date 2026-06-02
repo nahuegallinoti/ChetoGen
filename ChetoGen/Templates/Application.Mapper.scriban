@@ -1,0 +1,17 @@
+using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
+using {{ENTITY}}Entity = {{BASE_NS}}.Domain.Entities.{{ENTITY}};
+
+namespace {{BASE_NS}}.Application.Mappers;
+
+public sealed class {{ENTITY}}Mapper : BaseMapper<{{ENTITY}}Model, {{ENTITY}}Entity>
+{
+    public override {{ENTITY}}Model ToModel({{ENTITY}}Entity source) => new()
+    {
+{{PROPS_MAPPER_TO_MODEL}}
+    };
+
+    public override {{ENTITY}}Entity ToEntity({{ENTITY}}Model source) => new()
+    {
+{{PROPS_MAPPER_TO_ENTITY}}
+    };
+}

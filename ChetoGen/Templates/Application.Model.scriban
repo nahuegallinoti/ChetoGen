@@ -1,0 +1,8 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace {{BASE_NS}}.Application.Models.App;
+
+public sealed class {{ENTITY}} : BaseModel<{{ID_TYPE}}>
+{
+{{PROPS_MODEL}}
+}

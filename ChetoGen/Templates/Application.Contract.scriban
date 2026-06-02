@@ -1,0 +1,8 @@
+{{CONTRACT_USINGS}}using {{BASE_NS}}.Application.Contracts.Base;
+
+namespace {{BASE_NS}}.Application.Contracts.{{ENTITY}};
+
+public interface I{{ENTITY}}Service : IBaseService<Models.App.{{ENTITY}}, {{ID_TYPE}}>
+{
+{{CONTRACT_BODY}}
+}

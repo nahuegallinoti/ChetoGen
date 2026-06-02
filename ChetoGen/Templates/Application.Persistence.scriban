@@ -1,0 +1,9 @@
+{{PERSISTENCE_USINGS}}using {{BASE_NS}}.Application.Persistence.Base;
+using {{BASE_NS}}.Domain.Entities;
+
+namespace {{BASE_NS}}.Application.Persistence;
+
+public interface I{{ENTITY}}DA : IBaseDA<{{ENTITY}}, {{ID_TYPE}}>
+{
+{{PERSISTENCE_BODY}}
+}

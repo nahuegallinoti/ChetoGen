@@ -1,0 +1,84 @@
+using {{BASE_NS}}.Client.ApiClients;
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
+using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
+
+namespace {{BASE_NS}}.Client.Components.Pages;
+
+public partial class {{ENTITY}}Edit : ComponentBase
+{
+    [Inject] public {{ENTITY}}ApiClient {{ENTITY}}Api { get; set; } = null!;
+    [Inject] public NavigationManager Nav { get; set; } = null!;
+    [Inject] public IJSRuntime JS { get; set; } = null!;
+
+    [Parameter] public {{ID_TYPE}} Id { get; set; }
+
+    private {{ENTITY}}Model? Model { get; set; }
+
+    private string errorMessage = string.Empty;
+    private bool saving;
+
+    private bool IsNew => Id.Equals(default({{ID_TYPE}}));
+
+    private string DisplayName => IsNew ? "(nuevo)" : {{DISPLAY_NAME_EXPR}};
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Model is not null) return;
+
+        if (IsNew)
+        {
+            Model = new {{ENTITY}}Model();
+            return;
+        }
+
+        var result = await {{ENTITY}}Api.GetAsync(Id, CancellationToken.None);
+        if (result.Success)
+        {
+            Model = result.Value;
+        }
+        else
+        {
+            Model = new {{ENTITY}}Model { Id = Id };
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+    }
+
+    private async Task OnSave()
+    {
+        if (Model is null) return;
+
+        saving = true;
+        var result = IsNew
+            ? await {{ENTITY}}Api.CreateAsync(Model, CancellationToken.None)
+            : await {{ENTITY}}Api.UpdateAsync(Model, CancellationToken.None);
+        saving = false;
+
+        if (result.Success)
+        {
+            Nav.NavigateTo("/{{entity}}");
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+    }
+
+    private async Task OnDelete()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"¿Borrar {{ENTITY}} #{Id}?");
+        if (!confirmed) return;
+
+        var result = await {{ENTITY}}Api.DeleteAsync(Id, CancellationToken.None);
+        if (result.Success)
+        {
+            Nav.NavigateTo("/{{entity}}");
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+    }
+
+    private void OnBack() => Nav.NavigateTo("/{{entity}}");
+}

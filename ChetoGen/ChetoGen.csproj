@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ChetoGen</RootNamespace>
+    <AssemblyName>ChetoGen</AssemblyName>
+    <!-- CA1859: prefer concrete collection types — irrelevant for a one-shot CLI, and the
+         presentation helpers intentionally accept IReadOnlyList to stay caller-agnostic. -->
+    <NoWarn>CA1848;CA1303;CA1031;CA1859</NoWarn>
+  </PropertyGroup>
+
+  <!-- Pack as a .NET global/local tool: `dotnet tool install ChetoGen` exposes the `chetogen` command. -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>chetogen</ToolCommandName>
+    <PackageId>ChetoGen</PackageId>
+    <Version>0.3.0</Version>
+    <Authors>Nagu</Authors>
+    <Description>Agnostic, configuration-driven CRUD slice generator for layered .NET solutions (Domain → Application → Infrastructure → Api → Client + Blazor). Ships default templates; consumers point at their own templates folder and a chetogen.json to generate code for any system.</Description>
+    <PackageTags>codegen;scaffolding;crud;generator;dotnet-tool;blazor;aspire</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\nupkg</PackageOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Spectre.Console.Cli" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChetoGen.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Templates\**\*.scriban">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

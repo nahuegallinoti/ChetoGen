@@ -1,0 +1,106 @@
+using {{BASE_NS}}.Application.Models.App;
+using {{BASE_NS}}.Client.ApiClients;
+using {{BASE_NS}}.Domain.Paging;
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
+using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
+
+namespace {{BASE_NS}}.Client.Components.Pages;
+
+public partial class {{ENTITY}}Index : ComponentBase
+{
+    private const int DefaultPageSize = {{PAGE_SIZE}};
+
+    [Inject] public {{ENTITY}}ApiClient {{ENTITY}}Api { get; set; } = null!;
+    [Inject] public NavigationManager Nav { get; set; } = null!;
+    [Inject] public IJSRuntime JS { get; set; } = null!;
+
+    private {{ENTITY}}Filter filter = new() { PageSize = DefaultPageSize };
+    private PagedResult<{{ENTITY}}Model> paged = new([], 0, 1, DefaultPageSize);
+
+    private string errorMessage = string.Empty;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task OnPageSizeChanged()
+    {
+        filter.Page = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        var result = await {{ENTITY}}Api.GetPagedAsync(filter, CancellationToken.None);
+        if (result.Success)
+        {
+            paged = result.Value;
+            errorMessage = string.Empty;
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+        loading = false;
+    }
+
+    private async Task OnSearch()
+    {
+        filter.Page = 1;
+        await LoadAsync();
+    }
+
+    private async Task OnReset()
+    {
+        filter = new {{ENTITY}}Filter { PageSize = filter.PageSize };
+        await LoadAsync();
+    }
+
+    private async Task GoToPage(int targetPage)
+    {
+        if (targetPage < 1 || targetPage > Math.Max(paged.TotalPages, 1)) return;
+        filter.Page = targetPage;
+        await LoadAsync();
+    }
+
+    private async Task OnSort(string column)
+    {
+        if (string.Equals(filter.SortBy, column, StringComparison.Ordinal))
+        {
+            filter.SortDir = filter.SortDir == SortDirection.Asc ? SortDirection.Desc : SortDirection.Asc;
+        }
+        else
+        {
+            filter.SortBy = column;
+            filter.SortDir = SortDirection.Asc;
+        }
+        filter.Page = 1;
+        await LoadAsync();
+    }
+
+    private string SortIcon(string column) =>
+        !string.Equals(filter.SortBy, column, StringComparison.Ordinal) ? "bi-arrow-down-up text-muted opacity-50"
+        : filter.SortDir == SortDirection.Desc ? "bi-arrow-down text-{{ACCENT}}"
+        : "bi-arrow-up text-{{ACCENT}}";
+
+    private void OnNew() => Nav.NavigateTo($"/{{entity}}/new");
+
+    private void OnEdit({{ENTITY}}Model item) => Nav.NavigateTo($"/{{entity}}/edit/{item.Id}");
+
+    private async Task OnDelete({{ENTITY}}Model item)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"¿Borrar {{ENTITY}} #{item.Id}?");
+        if (!confirmed) return;
+
+        var result = await {{ENTITY}}Api.DeleteAsync(item.Id, CancellationToken.None);
+        if (result.Success)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            errorMessage = result.Errors.FormatErrorMessages();
+        }
+    }
+}

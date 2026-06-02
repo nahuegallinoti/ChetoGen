@@ -1,0 +1,20 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+
+## NuGet
+*.nupkg
+.packages/
+nupkg/
+
+## IDE
+.vs/
+.idea/
+*.suo
+
+## Local tool manifests are tracked; tool installs are not
+.dotnet/

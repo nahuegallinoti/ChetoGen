@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="README.md" />
+    <File Path="ARCHITECTURE.md" />
+    <File Path="chetogen.example.json" />
+  </Folder>
+  <Folder Name="/Tool/">
+    <Project Path="ChetoGen/ChetoGen.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="ChetoGen.Tests/ChetoGen.Tests.csproj" />
+  </Folder>
+</Solution>

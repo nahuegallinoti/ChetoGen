@@ -1,0 +1,79 @@
+@page "/{{entity}}/new"
+@page "/{{entity}}/edit/{Id{{ID_ROUTE_CONSTRAINT}}}"
+@rendermode InteractiveServer
+
+<PageTitle>{{ENTITY}} @DisplayName</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 pb-2 border-bottom">
+    <div class="d-flex align-items-center">
+        <button type="button" class="btn btn-link p-0 me-3 text-muted" @onclick="OnBack" title="Volver">
+            <i class="bi bi-arrow-left fs-5"></i>
+        </button>
+        <h3 class="mb-0 d-flex align-items-center">
+            <i class="bi bi-{{ENTITY_ICON}} text-{{ACCENT}} me-2"></i>{{ENTITY}}
+            <span class="text-muted ms-2">@DisplayName</span>
+            @if (!IsNew)
+            {
+                <span class="badge text-bg-light text-muted ms-2 small font-monospace">#@Id</span>
+            }
+        </h3>
+    </div>
+    @if (!IsNew)
+    {
+        <button type="button" class="btn btn-outline-danger btn-sm" @onclick="OnDelete">
+            <i class="bi bi-trash me-1"></i> Borrar
+        </button>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-circle me-2"></i>
+        <div class="flex-grow-1">@errorMessage</div>
+        <button type="button" class="btn-close" aria-label="Close" @onclick="() => errorMessage = string.Empty"></button>
+    </div>
+}
+
+@if (Model is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-{{ACCENT}}" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Cargando {{entity}}...</p>
+    </div>
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <EditForm Model="@Model" OnValidSubmit="OnSave" FormName="{{entity}}EditForm">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="alert alert-warning" />
+
+                <div class="row g-3">
+{{PROPS_FORM_FIELDS}}
+                </div>
+
+                <div class="mt-4 d-flex flex-wrap gap-2 justify-content-end">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="OnBack" disabled="@saving">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-{{ACCENT}}" disabled="@saving">
+                        @if (saving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Guardando...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-lg me-1"></i>
+                            <span>Guardar</span>
+                        }
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}

@@ -1,0 +1,8 @@
+using {{BASE_NS}}.Domain.Entities.Base;
+
+namespace {{BASE_NS}}.Domain.Entities;
+
+public class {{ENTITY}} : BaseEntity<{{ID_TYPE}}>
+{
+{{PROPS_ENTITY}}
+}

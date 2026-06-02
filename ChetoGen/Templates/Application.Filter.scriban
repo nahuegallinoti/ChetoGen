@@ -1,0 +1,11 @@
+using {{BASE_NS}}.Domain.Paging;
+
+namespace {{BASE_NS}}.Application.Models.App;
+
+/// <summary>
+/// Server-side filter + paging + sort envelope for {{ENTITY_PLURAL}}.
+/// </summary>
+public sealed class {{ENTITY}}Filter : PagedQuery
+{
+{{PROPS_FILTER_DTO}}
+}
