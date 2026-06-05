@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace {{BASE_NS}}.Application.Models.App;
 
-public sealed class {{ENTITY}} : BaseModel<{{ID_TYPE}}>
+public sealed class {{ENTITY}}{{ARCH_MODEL_BASE}}
 {
 {{PROPS_MODEL}}
 }

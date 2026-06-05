@@ -1,9 +1,8 @@
-using {{BASE_NS}}.Domain.Paging;
-
 namespace {{BASE_NS}}.Application.Models.App;
 
 /// <summary>
-/// Server-side filter + paging + sort envelope for {{ENTITY_PLURAL}}.
+/// Filtro + paginación + orden (server-side) para {{ENTITY_PLURAL}}.
+/// Hereda Page / PageSize / SortBy / SortDesc de PagedQuery ({{BASE_NS}}.Application.Models).
 /// </summary>
 public sealed class {{ENTITY}}Filter : PagedQuery
 {

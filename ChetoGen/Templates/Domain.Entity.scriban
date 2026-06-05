@@ -1,8 +1,7 @@
-using {{BASE_NS}}.Domain.Entities.Base;
-
+{{ARCH_ENTITY_USINGS}}
 namespace {{BASE_NS}}.Domain.Entities;
 
-public class {{ENTITY}} : BaseEntity<{{ID_TYPE}}>
+public class {{ENTITY}}{{ARCH_ENTITY_BASE}}
 {
 {{PROPS_ENTITY}}
 }

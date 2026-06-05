@@ -3,7 +3,7 @@ using {{ENTITY}}Entity = {{BASE_NS}}.Domain.Entities.{{ENTITY}};
 
 namespace {{BASE_NS}}.Application.Mappers;
 
-public sealed class {{ENTITY}}Mapper : BaseMapper<{{ENTITY}}Model, {{ENTITY}}Entity>
+public sealed class {{ENTITY}}Mapper{{ARCH_MAPPER_BASE}}
 {
     public override {{ENTITY}}Model ToModel({{ENTITY}}Entity source) => new()
     {

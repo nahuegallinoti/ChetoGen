@@ -46,13 +46,19 @@ public class GenerationPlanTests
     }
 
     [Fact]
-    public void ServerModeAddsPagingProjectReferenceMutator()
+    public void ServerModeScaffoldsSelfContainedPagingAndPatchesNoCsproj()
     {
-        // Application.Models.csproj is only patched (Domain.Paging reference) in server mode.
-        SharedFileNames(GenerationPlan.Build(Specs.Entity(mode: FilterMode.Client), Paths, Specs.Config()))
-            .Should().NotContain("AspireApp.Application.Models.csproj");
-        SharedFileNames(GenerationPlan.Build(Specs.Entity(mode: FilterMode.Server), Paths, Specs.Config()))
-            .Should().Contain("AspireApp.Application.Models.csproj");
+        var client = GenerationPlan.Build(Specs.Entity(mode: FilterMode.Client), Paths, Specs.Config());
+        var server = GenerationPlan.Build(Specs.Entity(mode: FilterMode.Server), Paths, Specs.Config());
+
+        // Paging types (PagedQuery + PagedResult) are scaffolded into the shared models project,
+        // but only in server mode.
+        client.Creations.Select(c => c.TemplateName).Should().NotContain("Application.Paging.scriban");
+        server.Creations.Select(c => c.TemplateName).Should().Contain("Application.Paging.scriban");
+
+        // No mutator ever touches a .csproj — we never add project references anymore.
+        client.Mutators.Should().NotContain(m => m.TargetPath.EndsWith(".csproj", StringComparison.Ordinal));
+        server.Mutators.Should().NotContain(m => m.TargetPath.EndsWith(".csproj", StringComparison.Ordinal));
     }
 
     [Fact]

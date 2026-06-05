@@ -25,7 +25,9 @@ internal static class ConfigLoader
 
     public static LoadedConfig Load(string? explicitConfigPath = null, string? explicitRoot = null, string? startDirectory = null)
     {
-        var startDir = startDirectory ?? Directory.GetCurrentDirectory();
+        // An explicit --root also anchors config discovery there (not just the CWD), so pointing the
+        // tool at another solution with --root picks up *that* solution's chetogen.json.
+        var startDir = startDirectory ?? explicitRoot ?? Directory.GetCurrentDirectory();
 
         var configPath = ResolveConfigPath(explicitConfigPath, startDir);
         var dto = configPath is not null ? ParseDto(configPath) : null;
@@ -144,15 +146,22 @@ internal static class ConfigLoader
                 paths[key] = value;
         }
 
+        var architecture = new Dictionary<string, string>(GeneratorConfig.DefaultArchitecture, StringComparer.Ordinal);
+        if (dto.Architecture is not null)
+        {
+            foreach (var (key, value) in dto.Architecture)
+                architecture[key] = value;
+        }
+
         return @default with
         {
             RootMarkers = rootMarkers,
             TemplatesDirectory = ResolveTemplatesDirectory(dto.TemplatesDirectory, configPath),
             AppHostProject = FirstNonEmpty(dto.AppHostProject) ?? @default.AppHostProject,
-            PagingProjectReference = FirstNonEmpty(dto.PagingProjectReference) ?? @default.PagingProjectReference,
             ExcludeTemplates = dto.ExcludeTemplates ?? [],
             ExcludeMutators = dto.ExcludeMutators ?? [],
             Paths = paths,
+            Architecture = architecture,
             Tokens = dto.Tokens is null
                 ? @default.Tokens
                 : new Dictionary<string, string>(dto.Tokens, StringComparer.Ordinal),
@@ -180,10 +189,10 @@ internal static class ConfigLoader
         [JsonPropertyName("rootMarkers")] public List<string>? RootMarkers { get; set; }
         [JsonPropertyName("templatesDirectory")] public string? TemplatesDirectory { get; set; }
         [JsonPropertyName("appHostProject")] public string? AppHostProject { get; set; }
-        [JsonPropertyName("pagingProjectReference")] public string? PagingProjectReference { get; set; }
         [JsonPropertyName("excludeTemplates")] public List<string>? ExcludeTemplates { get; set; }
         [JsonPropertyName("excludeMutators")] public List<string>? ExcludeMutators { get; set; }
         [JsonPropertyName("paths")] public Dictionary<string, string>? Paths { get; set; }
+        [JsonPropertyName("architecture")] public Dictionary<string, string>? Architecture { get; set; }
         [JsonPropertyName("tokens")] public Dictionary<string, string>? Tokens { get; set; }
     }
 }

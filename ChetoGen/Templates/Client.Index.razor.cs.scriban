@@ -27,15 +27,15 @@ public partial class {{ENTITY}}Index : ComponentBase
     {
         loading = true;
         var result = await {{ENTITY}}Api.GetAllAsync(CancellationToken.None);
-        if (result.Success)
+        if (result.{{ARCH_RESULT_OK}})
         {
-            all = [.. result.Value];
+            all = [.. result.{{ARCH_RESULT_VALUE}}];
             ApplyFilter();
             errorMessage = string.Empty;
         }
         else
         {
-            errorMessage = result.Errors.FormatErrorMessages();
+            errorMessage = result.{{ARCH_RESULT_ERRORS}};
         }
         loading = false;
     }
@@ -97,7 +97,7 @@ public partial class {{ENTITY}}Index : ComponentBase
         if (!confirmed) return;
 
         var result = await {{ENTITY}}Api.DeleteAsync(item.Id, CancellationToken.None);
-        if (result.Success)
+        if (result.{{ARCH_RESULT_OK}})
         {
             all.Remove(item);
             ApplyFilter();
@@ -105,7 +105,7 @@ public partial class {{ENTITY}}Index : ComponentBase
         }
         else
         {
-            errorMessage = result.Errors.FormatErrorMessages();
+            errorMessage = result.{{ARCH_RESULT_ERRORS}};
         }
     }
 }

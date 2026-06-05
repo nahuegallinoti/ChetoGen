@@ -32,7 +32,13 @@ internal sealed class TemplateRenderer
         foreach (var (key, value) in tokens)
             sb.Replace("{{" + key + "}}", value);
 
-        return sb.ToString();
+        // Normalize to LF. Line endings otherwise come from three uncoordinated sources —
+        // the template files (CRLF or LF depending on checkout/edit history), C# token
+        // literals (always "\n"), and Environment.NewLine via StringBuilder.AppendLine
+        // (CRLF on Windows, LF elsewhere) — which produces files with mixed endings that
+        // also vary by the OS the tool runs on. Collapsing to LF makes output deterministic
+        // and clean; LF is universally accepted by .NET tooling, editors, and Git.
+        return sb.ToString().Replace("\r\n", "\n").Replace("\r", "\n");
     }
 
     /// <summary>Consumer override folder first (if present), then the built-in template set.</summary>
@@ -56,6 +62,8 @@ internal sealed class TemplateRenderer
     public static IReadOnlyDictionary<string, string> BuildTokens(EntitySpec entity, GeneratorConfig config)
     {
         var ns = config.BaseNamespace;
+
+        string Arch(string key) => ExpandArchitecture(config, entity, key);
 
         var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -103,6 +111,33 @@ internal sealed class TemplateRenderer
             ["CONTROLLER_BODY"] = BuildControllerBody(entity),
             ["API_CLIENT_EXTRA_USINGS"] = BuildApiClientExtraUsings(entity, ns),
             ["API_CLIENT_EXTRA_METHODS"] = BuildApiClientExtraMethods(entity),
+
+            // Architecture seams — base classes/interfaces, ROP wrapper, cache. Each value comes from
+            // config.Architecture (overridable per chetogen.json) after placeholder expansion.
+            ["ARCH_ENTITY_USINGS"] = Arch("EntityUsings"),
+            ["ARCH_ENTITY_BASE"] = Arch("EntityBase"),
+            ["ARCH_MODEL_BASE"] = Arch("ModelBase"),
+            ["ARCH_MAPPER_BASE"] = Arch("MapperBase"),
+            ["ARCH_SERVICE_CONTRACT_USINGS"] = Arch("ServiceContractUsings"),
+            ["ARCH_SERVICE_CONTRACT_BASE"] = Arch("ServiceContractBase"),
+            ["ARCH_PERSISTENCE_CONTRACT_USINGS"] = Arch("PersistenceContractUsings"),
+            ["ARCH_PERSISTENCE_CONTRACT_BASE"] = Arch("PersistenceContractBase"),
+            ["ARCH_SERVICE_IMPL_USINGS"] = Arch("ServiceImplUsings"),
+            ["ARCH_CACHE_USING"] = Arch("CacheUsing"),
+            ["ARCH_SERVICE_CTOR"] = Arch("ServiceCtor"),
+            ["ARCH_SERVICE_BASE"] = Arch("ServiceBase"),
+            ["ARCH_DATAACCESS_USING"] = Arch("DataAccessUsing"),
+            ["ARCH_DATAACCESS_CTOR"] = Arch("DataAccessCtor"),
+            ["ARCH_DATAACCESS_BASE"] = Arch("DataAccessBase"),
+            ["ARCH_CONTROLLER_CTOR"] = Arch("ControllerCtor"),
+            ["ARCH_CONTROLLER_BASE"] = Arch("ControllerBase"),
+            ["ARCH_APICLIENT_USING"] = Arch("ApiClientUsing"),
+            ["ARCH_APICLIENT_CTOR"] = Arch("ApiClientCtor"),
+            ["ARCH_APICLIENT_BASE"] = Arch("ApiClientBase"),
+            ["ARCH_RESULT"] = Arch("ResultType"),
+            ["ARCH_RESULT_OK"] = Arch("ResultIsSuccess"),
+            ["ARCH_RESULT_VALUE"] = Arch("ResultValue"),
+            ["ARCH_RESULT_ERRORS"] = Arch("ResultErrors"),
         };
 
         // Consumer-provided static token overrides win over everything (including BASE_NS).
@@ -110,6 +145,19 @@ internal sealed class TemplateRenderer
             tokens[key] = value;
 
         return tokens;
+    }
+
+    /// <summary>Expands an architecture seam value (base class, wrapper, etc.) against the entity/config.</summary>
+    private static string ExpandArchitecture(GeneratorConfig config, EntitySpec entity, string key)
+    {
+        var raw = config.Architecture.TryGetValue(key, out var value) ? value : string.Empty;
+        return raw
+            .Replace("{BaseNamespace}", config.BaseNamespace, StringComparison.Ordinal)
+            .Replace("{Entity}", entity.Name, StringComparison.Ordinal)
+            .Replace("{EntityCamel}", entity.Camel, StringComparison.Ordinal)
+            .Replace("{Id}", entity.IdType, StringComparison.Ordinal)
+            .Replace("{EventBusCtorParam}", entity.UseEventBus ? ", IMessageBus messageBus" : string.Empty, StringComparison.Ordinal)
+            .Replace("{EventBusBaseArg}", entity.UseEventBus ? ", messageBus" : string.Empty, StringComparison.Ordinal);
     }
 
     private static string BuildDisplayNameExpression(EntitySpec entity)
@@ -567,18 +615,18 @@ internal sealed class TemplateRenderer
 
     private static string BuildPersistenceUsings(EntitySpec entity, string ns) =>
         entity.IsServerFiltering
-            ? $"using System.Linq.Expressions;\nusing {ns}.Domain.Paging;\n"
+            ? "using System.Linq.Expressions;\n"
             : string.Empty;
 
     private static string BuildPersistenceBody(EntitySpec entity)
     {
         if (!entity.IsServerFiltering) return string.Empty;
-        return $"    Task<PagedResult<{entity.Name}>> GetPagedAsync(PagedQuery query, IEnumerable<Expression<Func<{entity.Name}, bool>>> predicates, CancellationToken ct);";
+        return $"    Task<(IReadOnlyList<{entity.Name}> Items, int Total)> GetPagedAsync(IEnumerable<Expression<Func<{entity.Name}, bool>>> predicates, string? sortBy, bool sortDesc, int skip, int take, CancellationToken ct);";
     }
 
     private static string BuildDaUsings(EntitySpec entity, string ns) =>
         entity.IsServerFiltering
-            ? $"using System.Linq.Expressions;\nusing {ns}.Domain.Paging;\nusing Microsoft.EntityFrameworkCore;\n"
+            ? "using System.Linq.Expressions;\nusing Microsoft.EntityFrameworkCore;\n"
             : string.Empty;
 
     private static string BuildDaBody(EntitySpec entity)
@@ -588,26 +636,25 @@ internal sealed class TemplateRenderer
         var sb = new StringBuilder();
         sb.AppendLine();
         sb.AppendLine("{");
-        sb.AppendLine($"    public async Task<PagedResult<{entity.Name}>> GetPagedAsync(PagedQuery query, IEnumerable<Expression<Func<{entity.Name}, bool>>> predicates, CancellationToken ct)");
+        sb.AppendLine($"    public async Task<(IReadOnlyList<{entity.Name}> Items, int Total)> GetPagedAsync(IEnumerable<Expression<Func<{entity.Name}, bool>>> predicates, string? sortBy, bool sortDesc, int skip, int take, CancellationToken ct)");
         sb.AppendLine("    {");
-        sb.AppendLine("        var (page, size) = query.Normalize();");
         sb.AppendLine($"        IQueryable<{entity.Name}> q = Context.Set<{entity.Name}>().AsNoTracking();");
         sb.AppendLine();
         sb.AppendLine("        foreach (var predicate in predicates)");
         sb.AppendLine("            q = q.Where(predicate);");
         sb.AppendLine();
-        sb.AppendLine("        q = query.SortBy switch");
+        sb.AppendLine("        q = sortBy switch");
         sb.AppendLine("        {");
         foreach (var p in entity.SortableProperties)
         {
-            sb.AppendLine($"            \"{p.Name}\" => query.SortDir == SortDirection.Desc ? q.OrderByDescending(x => x.{p.Name}) : q.OrderBy(x => x.{p.Name}),");
+            sb.AppendLine($"            \"{p.Name}\" => sortDesc ? q.OrderByDescending(x => x.{p.Name}) : q.OrderBy(x => x.{p.Name}),");
         }
         sb.AppendLine("            _ => q.OrderBy(x => x.Id),");
         sb.AppendLine("        };");
         sb.AppendLine();
         sb.AppendLine("        var total = await q.CountAsync(ct);");
-        sb.AppendLine("        var items = await q.Skip((page - 1) * size).Take(size).ToListAsync(ct);");
-        sb.AppendLine($"        return new PagedResult<{entity.Name}>(items, total, page, size);");
+        sb.AppendLine("        var items = await q.Skip(skip).Take(take).ToListAsync(ct);");
+        sb.AppendLine("        return (items, total);");
         sb.AppendLine("    }");
         sb.Append('}');
         return sb.ToString();
@@ -615,7 +662,7 @@ internal sealed class TemplateRenderer
 
     private static string BuildContractUsings(EntitySpec entity, string ns) =>
         entity.IsServerFiltering
-            ? $"using {ns}.Application.Models.App;\nusing {ns}.Domain.Paging;\n"
+            ? $"using {ns}.Application.Models;\nusing {ns}.Application.Models.App;\n"
             : string.Empty;
 
     private static string BuildContractBody(EntitySpec entity)
@@ -626,7 +673,7 @@ internal sealed class TemplateRenderer
 
     private static string BuildServiceUsings(EntitySpec entity, string ns) =>
         entity.IsServerFiltering
-            ? $"using System.Linq.Expressions;\nusing {ns}.Application.Models.App;\nusing {ns}.Domain.Paging;\n"
+            ? $"using System.Linq.Expressions;\nusing {ns}.Application.Models;\nusing {ns}.Application.Models.App;\n"
             : string.Empty;
 
     private static string BuildServiceBody(EntitySpec entity)
@@ -644,12 +691,9 @@ internal sealed class TemplateRenderer
             AppendServicePredicate(sb, p, entity.Name);
 
         sb.AppendLine();
-        sb.AppendLine($"        var entityPage = await {entity.Camel}DA.GetPagedAsync(filter, predicates, ct);");
-        sb.AppendLine($"        return new PagedResult<{entity.Name}Model>(");
-        sb.AppendLine("            [.. mapper.ToModelList(entityPage.Items)],");
-        sb.AppendLine("            entityPage.Total,");
-        sb.AppendLine("            entityPage.Page,");
-        sb.AppendLine("            entityPage.PageSize);");
+        sb.AppendLine("        var (skip, take) = filter.ToSkipTake();");
+        sb.AppendLine($"        var (items, total) = await {entity.Camel}DA.GetPagedAsync(predicates, filter.SortBy, filter.SortDesc, skip, take, ct);");
+        sb.AppendLine($"        return new PagedResult<{entity.Name}Model>([.. mapper.ToModelList(items)], total, filter.Page, filter.PageSize);");
         sb.AppendLine("    }");
         sb.Append('}');
         return sb.ToString();
@@ -705,7 +749,7 @@ internal sealed class TemplateRenderer
 
     private static string BuildApiClientExtraUsings(EntitySpec entity, string ns) =>
         entity.IsServerFiltering
-            ? $"using {ns}.Domain.Paging;\n"
+            ? $"using {ns}.Application.Models;\n"
             : string.Empty;
 
     private static string BuildApiClientExtraMethods(EntitySpec entity)

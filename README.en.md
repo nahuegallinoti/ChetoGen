@@ -16,7 +16,7 @@ ChetoGen ships as a **.NET tool**. Build the `.nupkg` from this repo:
 
 ```pwsh
 dotnet pack ChetoGen/ChetoGen.csproj -c Release
-# -> artifacts/nupkg/ChetoGen.0.1.0.nupkg
+# -> artifacts/nupkg/ChetoGen.<version>.nupkg
 ```
 
 Install it from that local feed (global, local, or portable):
@@ -40,9 +40,9 @@ The command is **`chetogen`** (global/portable tool) or **`dotnet chetogen`** (l
 ## Quickstart
 
 ```pwsh
-# 1. (Optional) Create a chetogen.json at your solution root.
-#    Infers baseNamespace from the .slnx/.sln file name.
-chetogen init                 # or:  chetogen init --with-templates
+# 1. (Optional) Create a chetogen.json with the interactive wizard.
+#    Asks for namespace, layers, shared files, layout, and templates.
+chetogen init                 # wizard · or:  chetogen init --yes (defaults, no prompts)
 
 # 2. Generate an entity.
 chetogen generate Order
@@ -88,14 +88,15 @@ Place it at your solution root (ChetoGen discovers it by walking up). **Every ke
   // Project shown in the "next steps" hint.
   "appHostProject": "{BaseNamespace}.AppHost",
 
-  // ProjectReference added to the models .csproj in server mode.
-  "pagingProjectReference": "..\\{BaseNamespace}.Domain.Paging\\{BaseNamespace}.Domain.Paging.csproj",
-
   // Pipeline steps to skip, by friendly label (e.g. drop the Blazor edit page).
   "excludeTemplates": ["Client.Edit.razor", "Client.Edit.razor.cs"],
 
   // Override individual output paths. {BaseNamespace} and {Entity} are expanded; use '/' separators.
   "paths": { "DomainEntity": "{BaseNamespace}.Domain.Entities/{Entity}.cs" },
+
+  // Base classes / interfaces / result wrapper the generated code sits on.
+  // Override only the keys that differ from your architecture; the rest fall back to defaults.
+  "architecture": { "ResultType": "Result", "ResultIsSuccess": "Success" },
 
   // Extra static tokens; these win over the built-ins (including BASE_NS).
   "tokens": {}
@@ -104,7 +105,31 @@ Place it at your solution root (ChetoGen discovers it by walking up). **Every ke
 
 > `//` comments and trailing commas are allowed (the loader parses with `ReadCommentHandling = Skip` and `AllowTrailingCommas`).
 
-**`paths` keys:** `DomainEntity`, `ApplicationModel`, `ApplicationFilter`, `ApplicationContract`, `ApplicationService`, `ApplicationMapper`, `ApplicationPersistence`, `DataAccess`, `ApiController`, `ApiClient`, `BlazorIndexRazor`, `BlazorIndexCs`, `BlazorEditRazor`, `BlazorEditCs`, `ApplicationModelsCsproj`, `AppDbContext`, `DataAccessDI`, `ApplicationDI`, `MappersDI`, `ClientProgram`, `NavMenu`.
+**`paths` keys:** `DomainEntity`, `ApplicationModel`, `ApplicationFilter`, `ApplicationPaging`, `ApplicationContract`, `ApplicationService`, `ApplicationMapper`, `ApplicationPersistence`, `DataAccess`, `ApiController`, `ApiClient`, `BlazorIndexRazor`, `BlazorIndexCs`, `BlazorEditRazor`, `BlazorEditCs`, `AppDbContext`, `DataAccessDI`, `ApplicationDI`, `MappersDI`, `ClientProgram`, `NavMenu`.
+
+### Parameterizable architecture — `architecture`
+
+The generated code sits on a base architecture: entities on `BaseEntity`, services on `BaseService`, controllers on `BaseController`, repos on `BaseDA`, a typed HTTP client on `BaseApiClient`, and a result wrapper (ROP) `Result<T>`. **Each of those seams is a configurable token** under `"architecture"`, so a single template set targets **any** architecture without editing templates. Values support the placeholders `{BaseNamespace}`, `{Entity}`, `{EntityCamel}`, `{Id}`, `{EventBusCtorParam}` and `{EventBusBaseArg}`.
+
+Override **only** the keys that differ in your solution; the rest fall back to the default. Typical examples:
+
+```jsonc
+"architecture": {
+  // Your result wrapper is named differently (e.g. an Either monad):
+  "ResultType": "Either",
+  "ResultIsSuccess": "IsRight",
+  "ResultValue": "Right",
+  "ResultErrors": "Error",
+
+  // Your entities live in another namespace and inherit a different base:
+  "EntityUsings": "using MyCompany.Core.Domain;\n",
+  "EntityBase": " : Entity<{Id}>"
+}
+```
+
+**Available keys** (24): `EntityUsings`, `EntityBase`, `ModelBase`, `MapperBase`, `ServiceContractUsings`, `ServiceContractBase`, `PersistenceContractUsings`, `PersistenceContractBase`, `ServiceImplUsings`, `CacheUsing`, `ServiceCtor`, `ServiceBase`, `DataAccessUsing`, `DataAccessCtor`, `DataAccessBase`, `ControllerCtor`, `ControllerBase`, `ApiClientUsing`, `ApiClientCtor`, `ApiClientBase`, `ResultType`, `ResultIsSuccess`, `ResultValue`, `ResultErrors`. Their full defaults live in [`chetogen.example.json`](./chetogen.example.json), and `chetogen init` (pick *"map to my own base classes"*) dumps the whole block ready to edit.
+
+> The generated body **assumes your base class provides the CRUD** (`GetAll`/`Get`/`Create`/…). These tokens **remap** to your equivalent base classes — they don't remove them. If you don't use base classes and want full bodies, copy the templates (`--with-templates`) and edit them.
 
 **Custom templates:** run `chetogen init --with-templates` to copy the built-in set to `./chetogen-templates`, or create the folder yourself. ChetoGen looks up **each template by name in `templatesDirectory` first**, falling back to the built-in. Override only what you want. Templates are plain text with `{{TOKEN}}` placeholders (not real Scriban — see the token table).
 
@@ -134,12 +159,15 @@ Place it at your solution root (ChetoGen discovers it by walking up). **Every ke
 
 ### `chetogen init`
 
+By default it opens an **interactive wizard** that builds `chetogen.json` for you: it asks for the namespace, which **layers** to generate, which **shared files** to patch, whether your **layout** differs from the default, whether you use ChetoGen's **base classes** or want to map them to your own (dumps the full `architecture` block), and whether to **copy the templates** to rewrite the code body. It ends with a preview before writing. `--yes` (or a redirected stdin, e.g. CI) skips the wizard and writes a defaults file.
+
 | Option                  | Description                                                                  |
 | ----------------------- | ---------------------------------------------------------------------------- |
 | `--root <PATH>`         | Where to write `chetogen.json`. Default: detected solution root.            |
 | `--base-namespace <NS>` | Force `baseNamespace`. Inferred from the `.slnx`/`.sln` when omitted.       |
 | `--with-templates`      | Also copy the built-in templates to `./chetogen-templates` to customize.    |
 | `--force`               | Overwrite an existing `chetogen.json`.                                       |
+| `-y, --yes`             | Skip the wizard and write a defaults `chetogen.json` (CI mode).             |
 
 ### Property flags (`--prop "Name:type:flag1:flag2..."`)
 
@@ -158,7 +186,7 @@ For an `Order` entity (Id `long`, `baseNamespace = "AspireApp"`):
 
 **Always (up to 13):** `Order.cs` entity, application `Order.cs` model, `IOrderService`/`OrderService`, `OrderMapper`, `IOrderDA`/`OrderDA`, `OrderController`, `OrderApiClient`, and (if UI) `OrderIndex.razor(.cs)` + `OrderEdit.razor(.cs)` — all under `{BaseNamespace}.*` paths from `paths`.
 
-**Extra in `server` mode:** `OrderFilter.cs` (inherits `PagedQuery`); the DA/service/contract/controller/api-client gain `GetPagedAsync({Entity}Filter, ct)` (LINQ-to-EF Skip/Take/Count/OrderBy); endpoint `POST /api/{entity}/query`.
+**Extra in `server` mode:** `Paging.cs` — **self-contained** paging types (`PagedQuery` + `PagedResult<T>`), written once and needing **no external project or `<ProjectReference>`**; `OrderFilter.cs` (inherits `PagedQuery`); the DA/service/contract/controller/api-client gain `GetPagedAsync(...)` (LINQ-to-EF Skip/Take/Count/OrderBy — the port returns `(IReadOnlyList<T> Items, int Total)` and the service builds the `PagedResult<T>`); endpoint `POST /api/{entity}/query`.
 
 **Patched (idempotent):** `AppDbContext` (`DbSet<>` + EF string config), 3× `DependencyInjection.cs` + `Client/Program.cs` (registrations), `NavMenu.razor` (contextual `NavLink`).
 
@@ -170,15 +198,15 @@ For an `Order` entity (Id `long`, `baseNamespace = "AspireApp"`):
 
 Plain text with `{{TOKEN}}` (literal substitution — no AST/loops/ifs). Anything that varies per entity is built in C# and inserted as a token.
 
-Key tokens: `{{BASE_NS}}` (your `baseNamespace`), `{{ENTITY}}`/`{{entity}}`/`{{ENTITY_CAMEL}}`/`{{ENTITY_PLURAL}}`/`{{entity_plural}}`, `{{ID_TYPE}}`/`{{ID_ROUTE_CONSTRAINT}}`, `{{ENTITY_ICON}}`/`{{ACCENT}}`/`{{ACCENT_SUBTLE}}`, `{{PAGE_SIZE}}`, the `{{PROPS_*}}` family (entity/model props, table head/body, form fields, filter fields/state/logic/reset/sort cases, filter DTO), `{{AUTHORIZE_*}}`, `{{EVENT_BUS_*}}`, `{{DISPLAY_NAME_EXPR}}`, and per-layer `{{*_USINGS}}`/`{{*_BODY}}` (empty in client, full in server — server usings are built from `config.BaseNamespace`).
+Key tokens: `{{BASE_NS}}` (your `baseNamespace`), `{{ENTITY}}`/`{{entity}}`/`{{ENTITY_CAMEL}}`/`{{ENTITY_PLURAL}}`/`{{entity_plural}}`, `{{ID_TYPE}}`/`{{ID_ROUTE_CONSTRAINT}}`, `{{ENTITY_ICON}}`/`{{ACCENT}}`/`{{ACCENT_SUBTLE}}`, `{{PAGE_SIZE}}`, the `{{PROPS_*}}` family (entity/model props, table head/body, form fields, filter fields/state/logic/reset/sort cases, filter DTO), `{{AUTHORIZE_*}}`, `{{EVENT_BUS_*}}`, `{{DISPLAY_NAME_EXPR}}`, per-layer `{{*_USINGS}}`/`{{*_BODY}}` (empty in client, full in server — server usings are built from `config.BaseNamespace`), and the 24 `{{ARCH_*}}` tokens (base classes / interfaces / ROP wrapper) fed by the [`architecture`](#parameterizable-architecture--architecture) config after placeholder expansion.
 
-An unmapped `{{TOKEN}}` stays literal in the output, so wire it in `TemplateRenderer.BuildTokens` first. Your `chetogen.json` can add/override tokens via `"tokens"` (merged last, they win).
+An unmapped `{{TOKEN}}` stays literal in the output, so wire it in `TemplateRenderer.BuildTokens` first. Your `chetogen.json` can add/override tokens via `"tokens"` (merged last, they win), or remap the base classes via `"architecture"`.
 
 ---
 
-## Layered convention behind server mode
+## Self-contained server-mode pagination
 
-The default templates assume the Clean Architecture convention `{BaseNamespace}.<Layer>` with a dedicated paging project: `{BaseNamespace}.Domain.Paging` holds `PagedResult<T>` and `PagedQuery`; `{BaseNamespace}.Application.Models` references it so `{Entity}Filter` can inherit `PagedQuery` (the first server-mode run adds that `<ProjectReference>`, idempotently). The `I{Entity}DA` port depends only on Domain; the service translates the `{Entity}Filter` DTO to `List<Expression<Func<TEntity,bool>>>` before crossing the port; the DA implements with LINQ-to-EF. If your solution uses a different convention, override `paths` and/or supply your own templates.
+Server mode needs **no external paging project**. The first server-mode run writes `{BaseNamespace}.Application.Models/Paging.cs` with two tiny types: `PagedQuery` (`Page`/`PageSize`/`SortBy`/`SortDesc` + `ToSkipTake()`) and the serializable `PagedResult<T>` (`Items`/`Total`/`Page`/`PageSize` + `TotalPages`/`HasNext`/`HasPrevious`). They live in the models project (shared by API and client), so **no `<ProjectReference>` is ever added**. The `{Entity}Filter` inherits `PagedQuery`; the `I{Entity}DA` port returns `(IReadOnlyList<TEntity> Items, int Total)` — plain Skip/Take, no shared types crossing layers — and the service builds the `PagedResult<TModel>`. If your solution already has its own paging types, override `Application.Paging.scriban` in `chetogen-templates`, or drop the `Application.Paging` step via `excludeTemplates`.
 
 ---
 

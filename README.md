@@ -16,7 +16,7 @@ ChetoGen se empaqueta como **.NET tool**. Para generar el `.nupkg` desde este re
 
 ```pwsh
 dotnet pack ChetoGen/ChetoGen.csproj -c Release
-# -> artifacts/nupkg/ChetoGen.0.1.0.nupkg
+# -> artifacts/nupkg/ChetoGen.<version>.nupkg
 ```
 
 Instalarlo desde ese feed local (global, local o portable):
@@ -40,9 +40,9 @@ Una vez instalado, el comando es **`chetogen`** (tool global/portable) o **`dotn
 ## Quickstart
 
 ```pwsh
-# 1. (Opcional) Crear un chetogen.json en la raíz de tu solución.
-#    Infiere el baseNamespace del nombre del .slnx/.sln.
-chetogen init                 # o:  chetogen init --with-templates
+# 1. (Opcional) Crear un chetogen.json con el asistente interactivo.
+#    Te pregunta namespace, capas, archivos compartidos, layout y templates.
+chetogen init                 # asistente · o:  chetogen init --yes (defaults, sin preguntas)
 
 # 2. Generar una entidad.
 chetogen generate Order
@@ -55,10 +55,10 @@ Sin `chetogen.json`, ChetoGen igual funciona: camina hacia arriba buscando un `*
 `chetogen generate` sin más argumentos te guía paso a paso:
 
 - **Nombre y tipo de Id** (el nombre se normaliza a PascalCase, p. ej. `cliente` → `Cliente`).
-- **Editor de propiedades** con tabla en vivo y menú **Agregar / Editar / Quitar / Listo**: si te equivocaste en algo (tipo, requerido, filtro…) **editás esa fila** en vez de reiniciar. Por campo elegís nombre, tipo y, en un multi-select, **Requerido / Filtrable / Mostrar en la tabla / Ordenable** (con defaults sensatos según el tipo).
+- **Editor de propiedades** con tabla en vivo y menú **Add / Edit / Remove / Done**: si te equivocaste en algo (tipo, requerido, filtro…) **editás esa fila** en vez de reiniciar. Por campo elegís nombre, tipo y, en un multi-select, **Required / Filterable / Show in table / Sortable** (con defaults sensatos según el tipo).
 - Luego: pantallas Blazor, NavLink, event bus y modo **client/server** (+ tamaño de página en server).
 
-> En los pasos sí/no (Blazor, NavLink, event bus) y en el confirm final de generación, **`Esc` vuelve al paso anterior** (`Enter` = default · `S` = sí · `N` = no). `Esc` en el primer paso reabre el editor de propiedades.
+> En los pasos sí/no (Blazor, NavLink, event bus) y en el confirm final de generación, **`Esc` vuelve al paso anterior** (`Enter` = default · `Y` = sí · `N` = no). `Esc` en el primer paso reabre el editor de propiedades.
 
 ### Modo no-interactivo
 
@@ -94,15 +94,19 @@ Se ubica en la raíz de tu solución (ChetoGen lo descubre caminando hacia arrib
   // Proyecto que aparece en el hint de "próximos pasos".
   "appHostProject": "{BaseNamespace}.AppHost",
 
-  // ProjectReference que se agrega al .csproj de modelos en modo server.
-  "pagingProjectReference": "..\\{BaseNamespace}.Domain.Paging\\{BaseNamespace}.Domain.Paging.csproj",
-
   // Pasos del pipeline a saltear, por su "friendly label" (p. ej. para no generar el Edit de Blazor).
   "excludeTemplates": ["Client.Edit.razor", "Client.Edit.razor.cs"],
 
   // Override de rutas individuales. Se expanden {BaseNamespace} y {Entity}; usá '/' como separador.
   "paths": {
     "DomainEntity": "{BaseNamespace}.Domain.Entities/{Entity}.cs"
+  },
+
+  // Clases base / interfaces / wrapper de resultado sobre los que se genera el código.
+  // Override sólo las claves que difieran de tu arquitectura; el resto cae al default.
+  "architecture": {
+    "ResultType": "Result",
+    "ResultIsSuccess": "Success"
   },
 
   // Tokens estáticos extra; ganan sobre los integrados (incluido BASE_NS).
@@ -114,7 +118,31 @@ Se ubica en la raíz de tu solución (ChetoGen lo descubre caminando hacia arrib
 
 ### Claves de `paths`
 
-`DomainEntity`, `ApplicationModel`, `ApplicationFilter`, `ApplicationContract`, `ApplicationService`, `ApplicationMapper`, `ApplicationPersistence`, `DataAccess`, `ApiController`, `ApiClient`, `BlazorIndexRazor`, `BlazorIndexCs`, `BlazorEditRazor`, `BlazorEditCs`, `ApplicationModelsCsproj`, `AppDbContext`, `DataAccessDI`, `ApplicationDI`, `MappersDI`, `ClientProgram`, `NavMenu`.
+`DomainEntity`, `ApplicationModel`, `ApplicationFilter`, `ApplicationPaging`, `ApplicationContract`, `ApplicationService`, `ApplicationMapper`, `ApplicationPersistence`, `DataAccess`, `ApiController`, `ApiClient`, `BlazorIndexRazor`, `BlazorIndexCs`, `BlazorEditRazor`, `BlazorEditCs`, `AppDbContext`, `DataAccessDI`, `ApplicationDI`, `MappersDI`, `ClientProgram`, `NavMenu`.
+
+### Arquitectura parametrizable — `architecture`
+
+El código generado se apoya en una arquitectura base: entidades sobre `BaseEntity`, servicios sobre `BaseService`, controllers sobre `BaseController`, repos sobre `BaseDA`, un cliente HTTP sobre `BaseApiClient` y un wrapper de resultado (ROP) `Result<T>`. **Cada uno de esos puntos de apoyo es un token configurable** bajo `"architecture"`, así una sola plantilla sirve para **cualquier** arquitectura sin tocar las templates. Los valores admiten los placeholders `{BaseNamespace}`, `{Entity}`, `{EntityCamel}`, `{Id}`, `{EventBusCtorParam}` y `{EventBusBaseArg}`.
+
+Override **sólo** las claves que difieran en tu solución; el resto cae al default. Ejemplos típicos:
+
+```jsonc
+"architecture": {
+  // Tu wrapper de resultado se llama distinto (p. ej. una mónada Either):
+  "ResultType": "Either",
+  "ResultIsSuccess": "IsRight",
+  "ResultValue": "Right",
+  "ResultErrors": "Error",
+
+  // Tus entidades viven en otro namespace y heredan de otra base:
+  "EntityUsings": "using MiEmpresa.Core.Domain;\n",
+  "EntityBase": " : Entidad<{Id}>"
+}
+```
+
+**Claves disponibles** (24): `EntityUsings`, `EntityBase`, `ModelBase`, `MapperBase`, `ServiceContractUsings`, `ServiceContractBase`, `PersistenceContractUsings`, `PersistenceContractBase`, `ServiceImplUsings`, `CacheUsing`, `ServiceCtor`, `ServiceBase`, `DataAccessUsing`, `DataAccessCtor`, `DataAccessBase`, `ControllerCtor`, `ControllerBase`, `ApiClientUsing`, `ApiClientCtor`, `ApiClientBase`, `ResultType`, `ResultIsSuccess`, `ResultValue`, `ResultErrors`. Sus defaults completos están en [`chetogen.example.json`](./chetogen.example.json) y `chetogen init` (elegí *"mapear a mis propias clases base"*) te vuelca el bloque entero listo para editar.
+
+> El cuerpo generado **asume que tu clase base provee el CRUD** (`GetAll`/`Get`/`Create`/…). Estos tokens **remapean** a tus clases base equivalentes, no las eliminan. Si no usás clases base y querés cuerpos completos, copiá las templates (`--with-templates`) y editalas.
 
 ### Templates propias (override)
 
@@ -146,12 +174,15 @@ Corré `chetogen init --with-templates` para copiar el set integrado a `./chetog
 
 ### `chetogen init`
 
+Por defecto abre un **asistente interactivo** que arma el `chetogen.json` por vos: pregunta el namespace, qué **capas** generar, qué **archivos compartidos** parchear, si tu **layout** difiere del default, si usás las **clases base** de ChetoGen o querés mapearlas a las tuyas (vuelca el bloque `architecture` completo) y si querés **copiar las templates** para reescribir el cuerpo del código. Cierra con una vista previa del archivo antes de escribirlo. Con `--yes` (o si stdin está redirigido, p. ej. en CI) salta el asistente y escribe un archivo con defaults.
+
 | Opción                  | Descripción                                                                       |
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `--root <PATH>`         | Dónde escribir `chetogen.json`. Default: raíz de solución detectada.              |
 | `--base-namespace <NS>` | Forzar el `baseNamespace`. Si se omite, se infiere del `.slnx`/`.sln`.            |
 | `--with-templates`      | Copiar las templates integradas a `./chetogen-templates` para customizarlas.     |
 | `--force`               | Sobrescribir un `chetogen.json` existente.                                        |
+| `-y, --yes`             | Saltar el asistente y escribir un `chetogen.json` con defaults (modo CI).         |
 
 ### Flags de propiedad (`--prop "Name:type:flag1:flag2..."`)
 
@@ -195,8 +226,9 @@ Para una entidad `Order` con Id `long` y `baseNamespace = "AspireApp"`:
 
 **Extra en modo `server`:**
 
-- `{BaseNamespace}.Application.Models/App/OrderFilter.cs` — DTO de filtros + paging + sort (hereda `PagedQuery`).
-- `I{Entity}DA`, `{Entity}DA`, `I{Entity}Service`, `{Entity}Service`, `{Entity}Controller` y `{Entity}ApiClient` ganan `GetPagedAsync({Entity}Filter, ct)` con LINQ-to-EF (Skip/Take, Count, OrderBy por columna).
+- `{BaseNamespace}.Application.Models/Paging.cs` — tipos de paginación **autocontenidos** (`PagedQuery` + `PagedResult<T>`). Se generan una sola vez (se saltean en las siguientes entidades) y **no requieren ningún proyecto externo ni `<ProjectReference>`**.
+- `{BaseNamespace}.Application.Models/App/OrderFilter.cs` — DTO de filtros que hereda `PagedQuery` (`Page`/`PageSize`/`SortBy`/`SortDesc`).
+- `I{Entity}DA`, `{Entity}DA`, `I{Entity}Service`, `{Entity}Service`, `{Entity}Controller` y `{Entity}ApiClient` ganan `GetPagedAsync(...)` con LINQ-to-EF (Skip/Take, Count, OrderBy por columna). El port devuelve `(IReadOnlyList<T> Items, int Total)` y el Service arma el `PagedResult<T>`.
 - Endpoint `POST /api/{entity}/query` con el filtro en el body.
 
 **Archivos parcheados (idempotente, no duplica):**
@@ -241,20 +273,22 @@ Texto plano con `{{TOKEN}}` (sustitución literal, sin AST/loops/ifs). Lo que va
 | `{{EVENT_BUS_USING}}` / `{{EVENT_BUS_CTOR_PARAM}}` / `{{EVENT_BUS_BASE_ARG}}` | Fragmentos del event bus    |
 | `{{DISPLAY_NAME_EXPR}}`        | Expresión de "nombre visible" para headers                               |
 | `{{PERSISTENCE_USINGS/BODY}}`, `{{DA_USINGS/BODY}}`, `{{CONTRACT_USINGS/BODY}}`, `{{SERVICE_USINGS/BODY}}`, `{{CONTROLLER_*}}`, `{{API_CLIENT_*}}` | Usings/cuerpos extra por capa (vacíos en client, completos en server) |
+| `{{ARCH_*}}` (24 tokens)       | Clases base / interfaces / wrapper ROP — alimentados por la config [`architecture`](#arquitectura-parametrizable--architecture) tras expandir placeholders |
 
-Los `*_USINGS`/`*_BODY` server-mode usan `{{BASE_NS}}` para sus `using` (p. ej. `using {BaseNamespace}.Domain.Paging;`). Un token que no esté en el mapa queda literal en el output, así que cableá el token antes de usarlo (ver `TemplateRenderer.BuildTokens`). Tu `chetogen.json` puede agregar/override tokens vía `"tokens"`.
+Los `*_USINGS`/`*_BODY` server-mode usan `{{BASE_NS}}` para sus `using` (p. ej. `using {BaseNamespace}.Application.Models;`). Un token que no esté en el mapa queda literal en el output, así que cableá el token antes de usarlo (ver `TemplateRenderer.BuildTokens`). Tu `chetogen.json` puede agregar/override tokens vía `"tokens"`, o remapear las clases base vía `"architecture"`.
 
 ---
 
-## Convención por capas que sustenta server-mode
+## Paginación server-mode (autocontenida)
 
-El set de templates por defecto asume la convención de Clean Architecture `{BaseNamespace}.<Capa>` con un proyecto de paging dedicado:
+El server-mode **no depende de ningún proyecto de paginación externo**. La primera vez que generás una entidad en modo server, ChetoGen escribe `{BaseNamespace}.Application.Models/Paging.cs` con dos tipos chiquitos:
 
-- `{BaseNamespace}.Domain.Paging` — `PagedResult<T>` (envelope `Items/Total/Page/PageSize`) y `PagedQuery` (`Page/PageSize/SortBy/SortDir` + `Normalize()`).
-- `{BaseNamespace}.Application.Models` referencia `Domain.Paging` para que el `{Entity}Filter` herede `PagedQuery`. La primera generación server-mode agrega ese `<ProjectReference>` (idempotente). El resto de los proyectos lo ven transitivamente.
-- El port `I{Entity}DA` (en `Application.Persistence`) sólo depende de Domain; el `{Entity}Filter` (DTO en `Application.Models`) lo traduce el Service a `List<Expression<Func<TEntity,bool>>>` antes de cruzar el port. La DA implementa con LINQ-to-EF.
+- `PagedQuery` — base de los filtros: `Page` / `PageSize` / `SortBy` / `SortDesc` + `ToSkipTake()`.
+- `PagedResult<T>` — envelope serializable (`Items` / `Total` / `Page` / `PageSize` + `TotalPages` / `HasNext` / `HasPrevious`) que viaja de la API al cliente.
 
-Si tu solución usa otra convención, override `paths` y/o tus templates en `chetogen-templates`.
+Viven en el proyecto de modelos (compartido por API y cliente), así que **no hace falta agregar ninguna `<ProjectReference>`**. El `{Entity}Filter` hereda `PagedQuery`; el port `I{Entity}DA` devuelve `(IReadOnlyList<TEntity> Items, int Total)` —Skip/Take de toda la vida, sin tipos cruzando capas— y el Service arma el `PagedResult<TModel>`.
+
+Si tu solución ya tiene sus propios tipos de paginación, sobrescribí `Application.Paging.scriban` en tu carpeta `chetogen-templates` (y, si hace falta, los `using` vía templates propias), o salteá el paso `Application.Paging` con `excludeTemplates`.
 
 ---
 

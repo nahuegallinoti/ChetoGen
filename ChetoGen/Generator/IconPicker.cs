@@ -1,7 +1,7 @@
 namespace ChetoGen.Generator;
 
 /// <summary>
-/// Picks a Bootstrap Icons class (without the "bi-" prefix) for an entity name or a property,
+/// Picks a Bootstrap Icons class (without the "bi-" prefix) for an entity name,
 /// using lightweight keyword matching.
 /// </summary>
 internal static class IconPicker
@@ -114,71 +114,5 @@ internal static class IconPicker
                 return icon;
 
         return "collection";
-    }
-
-    private static readonly (string Keyword, string Icon)[] PropertyMap =
-    {
-        ("email", "envelope"),
-        ("mail", "envelope"),
-        ("phone", "telephone"),
-        ("mobile", "phone"),
-        ("url", "link-45deg"),
-        ("link", "link-45deg"),
-        ("website", "globe"),
-        ("address", "geo-alt"),
-        ("city", "buildings"),
-        ("country", "globe2"),
-        ("zip", "mailbox2"),
-        ("postal", "mailbox2"),
-
-        ("password", "key"),
-        ("token", "key-fill"),
-        ("secret", "shield-lock"),
-
-        ("name", "tag"),
-        ("title", "type"),
-        ("code", "upc"),
-        ("sku", "upc-scan"),
-        ("description", "chat-left-text"),
-        ("note", "sticky"),
-        ("comment", "chat-dots"),
-        ("message", "chat-text"),
-
-        ("price", "currency-dollar"),
-        ("amount", "cash-coin"),
-        ("total", "cash-stack"),
-        ("cost", "tag"),
-        ("salary", "cash"),
-
-        ("date", "calendar3"),
-        ("time", "clock"),
-        ("birth", "cake2"),
-        ("expire", "hourglass-split"),
-
-        ("count", "123"),
-        ("quantity", "stack"),
-        ("number", "123"),
-        ("age", "person-arms-up"),
-        ("year", "calendar-range"),
-    };
-
-    public static string PickForProperty(PropertySpec prop)
-    {
-        var lower = prop.Name.ToLowerInvariant();
-        foreach (var (keyword, icon) in PropertyMap)
-            if (lower.Contains(keyword, StringComparison.Ordinal))
-                return icon;
-
-        return prop.Type switch
-        {
-            "string" => "input-cursor-text",
-            "bool" => "toggle2-on",
-            "Guid" => "key-fill",
-            "DateTime" or "DateTimeOffset" or "DateOnly" => "calendar3",
-            "TimeOnly" => "clock",
-            "decimal" or "double" or "float" => "currency-dollar",
-            "int" or "long" or "short" or "byte" => "123",
-            _ => "input-cursor-text",
-        };
     }
 }

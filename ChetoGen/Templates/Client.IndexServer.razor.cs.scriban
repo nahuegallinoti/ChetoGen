@@ -1,6 +1,6 @@
+using {{BASE_NS}}.Application.Models;
 using {{BASE_NS}}.Application.Models.App;
 using {{BASE_NS}}.Client.ApiClients;
-using {{BASE_NS}}.Domain.Paging;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
@@ -33,14 +33,14 @@ public partial class {{ENTITY}}Index : ComponentBase
     {
         loading = true;
         var result = await {{ENTITY}}Api.GetPagedAsync(filter, CancellationToken.None);
-        if (result.Success)
+        if (result.{{ARCH_RESULT_OK}})
         {
-            paged = result.Value;
+            paged = result.{{ARCH_RESULT_VALUE}};
             errorMessage = string.Empty;
         }
         else
         {
-            errorMessage = result.Errors.FormatErrorMessages();
+            errorMessage = result.{{ARCH_RESULT_ERRORS}};
         }
         loading = false;
     }
@@ -68,12 +68,12 @@ public partial class {{ENTITY}}Index : ComponentBase
     {
         if (string.Equals(filter.SortBy, column, StringComparison.Ordinal))
         {
-            filter.SortDir = filter.SortDir == SortDirection.Asc ? SortDirection.Desc : SortDirection.Asc;
+            filter.SortDesc = !filter.SortDesc;
         }
         else
         {
             filter.SortBy = column;
-            filter.SortDir = SortDirection.Asc;
+            filter.SortDesc = false;
         }
         filter.Page = 1;
         await LoadAsync();
@@ -81,7 +81,7 @@ public partial class {{ENTITY}}Index : ComponentBase
 
     private string SortIcon(string column) =>
         !string.Equals(filter.SortBy, column, StringComparison.Ordinal) ? "bi-arrow-down-up text-muted opacity-50"
-        : filter.SortDir == SortDirection.Desc ? "bi-arrow-down text-{{ACCENT}}"
+        : filter.SortDesc ? "bi-arrow-down text-{{ACCENT}}"
         : "bi-arrow-up text-{{ACCENT}}";
 
     private void OnNew() => Nav.NavigateTo($"/{{entity}}/new");
@@ -94,13 +94,13 @@ public partial class {{ENTITY}}Index : ComponentBase
         if (!confirmed) return;
 
         var result = await {{ENTITY}}Api.DeleteAsync(item.Id, CancellationToken.None);
-        if (result.Success)
+        if (result.{{ARCH_RESULT_OK}})
         {
             await LoadAsync();
         }
         else
         {
-            errorMessage = result.Errors.FormatErrorMessages();
+            errorMessage = result.{{ARCH_RESULT_ERRORS}};
         }
     }
 }

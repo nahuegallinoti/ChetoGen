@@ -9,10 +9,10 @@ Companion to [`README.en.md`](./README.en.md). The README explains **how to use*
 ## TL;DR
 
 ```
-chetogen.json ─► GeneratorConfig ──────────────┐ (BaseNamespace, Paths, Tokens, TemplatesDir)
+chetogen.json ─► GeneratorConfig ──────────────┐ (BaseNamespace, Paths, Architecture, Tokens, TemplatesDir)
 CLI args ─► Settings ─► EntitySpec ─► GenerationPlan ─► [TemplateRenderer + IFileMutator] ─► disk
             (Spectre)   (record)      (Creations +       Templates/*.scriban + {{TOKEN}} map   IO
-                                       Mutators)         (BASE_NS + config.Tokens) + mutations
+                                       Mutators)         (BASE_NS + ARCH_* + config.Tokens) + mutations
 ```
 
 A single command (`generate`, plus `init`) that takes one entity name, asks (or accepts) a handful of properties, and writes one full CRUD slice across **Domain → Application → Infrastructure → Api → Client** plus a Blazor Index/Edit pair. Shared files (DI registrations, NavMenu, AppDbContext) get patched in-place by idempotent mutators. Nothing is hard-wired to a solution: namespaces, paths, and templates come from `GeneratorConfig` (loaded by `ConfigLoader` from `chetogen.json`, or defaults with the namespace inferred from the `.slnx`).
@@ -25,7 +25,7 @@ A single command (`generate`, plus `init`) that takes one entity name, asks (or 
 ChetoGen/                            ← the tool project (PackAsTool → `chetogen` command)
 ├── Program.cs                       ← Spectre.Console.Cli bootstrap; CommandApp<GenerateCommand> + `init` command
 ├── Configuration/                   ← the layer that makes the generator agnostic
-│   ├── GeneratorConfig.cs           ← record: BaseNamespace, Paths, RootMarkers, TemplatesDirectory, Tokens… + DefaultPaths + Expand()
+│   ├── GeneratorConfig.cs           ← record: BaseNamespace, Paths, Architecture, RootMarkers, TemplatesDirectory, Tokens… + DefaultPaths/DefaultArchitecture + Expand()
 │   └── ConfigLoader.cs              ← discovers/parses chetogen.json, merges over defaults, infers BaseNamespace from the .slnx
 ├── Commands/
 │   ├── GenerateCommand.cs           ← all UX: prompts, banner, preview panel, plan rendering, execution
@@ -42,12 +42,12 @@ ChetoGen/                            ← the tool project (PackAsTool → `cheto
 │       ├── IFileMutator.cs          ← interface: TargetPath + Mutate(source, entity) → MutationResult
 │       ├── DiRegistrationMutator.cs ← inserts using + AddScoped/AddSingleton lines after a marker
 │       ├── DbContextMutator.cs      ← inserts DbSet<> + modelBuilder.Entity<>() config in AppDbContext
-│       ├── NavMenuMutator.cs        ← inserts a NavLink block inside <Authorized> or before </nav>
-│       └── CsprojReferenceMutator.cs ← adds a <ProjectReference> to a .csproj (server-mode)
+│       └── NavMenuMutator.cs        ← inserts a NavLink block inside <Authorized> or before </nav>
 └── Templates/                       ← *.scriban text files; **NOT** real Scriban, just {{TOKEN}} substitution
     ├── Domain.Entity.scriban
     ├── Application.Model.scriban
     ├── Application.Filter.scriban   ← server-mode only
+    ├── Application.Paging.scriban   ← server-mode only (self-contained PagedQuery + PagedResult)
     ├── Application.Contract.scriban
     ├── Application.Service.scriban
     ├── Application.Persistence.scriban
@@ -81,7 +81,7 @@ Returns a `LoadedConfig (GeneratorConfig, SolutionRoot, ConfigFilePath?)`:
 
 With no `chetogen.json` the tool still works (all defaults + inferred namespace). Then `new PathResolver(root, config)` owns paths — every destination comes from `config.Paths` expanding `{BaseNamespace}`/`{Entity}`; no path-string math anywhere else.
 
-### 3. Build the spec — `GenerateCommand.BuildEntitySpec(settings)`
+### 3. Build the spec — `ResolveEntityBase` + `ResolveOptions`
 Either fully interactive (Spectre prompts) or fully driven by CLI flags. The output is one `EntitySpec` record with everything decided. Key resolvers:
 
 - `ResolveFilterMode` — `client` (default) or `server`. Determines whether the Index does in-browser filtering or talks to a paged endpoint.
@@ -116,11 +116,11 @@ Counts of created / mutated / skipped / failed in a panel, plus a "next steps" f
 | --- | --- |
 | `EntitySpec` | Immutable record. Everything the generator needs in one place: name, id type, properties, flags (Blazor/Nav/Auth/EventBus), `FilterMode`, `PageSize`, icon/accent overrides. Derived helpers: `Lower`, `Camel`, `Plural`, `IsServerFiltering`, `FilterableProperties`, `ListProperties`, `SortableProperties`. |
 | `PropertySpec` | One field. `Name`, `Type` (normalized), `Required`, `Filterable`, `ShowInList`, `Sortable`. Knows its type bucket via `IsString` / `IsBool` / `IsNumeric` / `IsDateTime` / `IsGuid` and its Razor input component (`InputText`, `InputNumber`, etc.). `Parse(raw)` handles the `--prop "Name:type:flag:flag"` CLI shape. |
-| `GeneratorConfig` | Record holding everything agnostic: `BaseNamespace`, `Paths` (logical-key → path with `{BaseNamespace}`/`{Entity}`), `RootMarkers`, `TemplatesDirectory`, `AppHostProject`, `PagingProjectReference`, `ExcludeTemplates`, `Tokens`. `DefaultPaths` reproduces the built-in layout; `Expand(t, entity)` resolves placeholders. |
+| `GeneratorConfig` | Record holding everything agnostic: `BaseNamespace`, `Paths` (logical-key → path with `{BaseNamespace}`/`{Entity}`), `Architecture` (key → architecture seam, feeds the `ARCH_*` tokens), `RootMarkers`, `TemplatesDirectory`, `AppHostProject`, `ExcludeTemplates`, `ExcludeMutators`, `Tokens`. `DefaultPaths`/`DefaultArchitecture` reproduce the built-in layout and Clean Architecture; `Expand(t, entity)` resolves placeholders. |
 | `ConfigLoader` | `Load(config?, root?, startDir?) → LoadedConfig`. Discovers and parses `chetogen.json`, merges over defaults, resolves the root, and infers `BaseNamespace`. |
 | `PathResolver` | Single owner of "where does file X go for entity Y?". `Resolve(key, entity)` expands `config.Paths[key]` and combines it with the root — the only place with path math. |
 | `GenerationPlan` | Returned by `Build(entity, paths, config)`. Holds `Creations` + `Mutators`. Conditionals (server-mode, Blazor/NavMenu on/off) and the `config.ExcludeTemplates` filter live here. |
-| `TemplateRenderer` | `new(config)` fixes the templates root (built-in + override). `BuildTokens(entity, config)` builds the `{{KEY}} → value` map (includes `BASE_NS` and merges `config.Tokens`). `Render(file, tokens)` resolves the template (override dir first) and runs `StringBuilder.Replace`. |
+| `TemplateRenderer` | `new(config)` fixes the templates root (built-in + override). `BuildTokens(entity, config)` builds the `{{KEY}} → value` map (includes `BASE_NS`, the `ARCH_*` via `ExpandArchitecture`, and merges `config.Tokens`). `Render(file, tokens)` resolves the template (override dir first), runs `StringBuilder.Replace` and **normalizes to LF**. |
 | `IFileMutator` / `MutationResult` | Tiny contract for shared-file patches. Mutate is **pure** (string in, string out) — actual write happens in `GenerateCommand`. |
 
 ---
@@ -169,11 +169,14 @@ Defined in `TemplateRenderer.BuildTokens(entity, config)`. Naming convention:
 - `BASE_NS` — the `config.BaseNamespace`; **every namespace in the templates** uses it (`{{BASE_NS}}.Domain.Entities`, etc.).
 - `ENTITY`, `ID_TYPE`, etc. — scalar identity tokens.
 - `PROPS_*` — per-property lists (entity props, model props, table head, filter fields, etc.).
-- `*_USINGS` — extra `using` directives for that file (server-mode adds `using {{BASE_NS}}.Domain.Paging;`, built from `config.BaseNamespace`).
+- `*_USINGS` — extra `using` directives for that file (server-mode adds `using {{BASE_NS}}.Application.Models;`, built from `config.BaseNamespace`).
 - `*_BODY` — the main body content of the file (empty `;\n` for client mode, full implementation for server mode).
 - `AUTHORIZE_*`, `EVENT_BUS_*` — conditional fragments toggled by entity flags.
+- `ARCH_*` — the **architecture seams**: base classes / interfaces / ROP wrapper the code sits on (`ARCH_ENTITY_BASE`, `ARCH_SERVICE_BASE`, `ARCH_CONTROLLER_BASE`, `ARCH_RESULT`, …). Unlike the rest, their value is **not hardcoded in C#**: it comes from `config.Architecture[key]` (overridable via `chetogen.json`) through `ExpandArchitecture`, which resolves the `{BaseNamespace}`/`{Entity}`/`{EntityCamel}`/`{Id}`/`{EventBusCtorParam}`/`{EventBusBaseArg}` placeholders. The defaults (`GeneratorConfig.DefaultArchitecture`) reproduce the reference Clean Architecture; this is what lets the **same template set** target any architecture without editing templates.
 
-If a token doesn't appear in the map, `{{IT}}` is left **literally in the output**. Always wire a token in `BuildTokens` before using it in a template. A consumer's `chetogen.json` can add/override tokens via `"tokens"` (merged last, they win).
+If a token doesn't appear in the map, `{{IT}}` is left **literally in the output**. Always wire a token in `BuildTokens` before using it in a template. A consumer's `chetogen.json` can add/override tokens via `"tokens"` (merged last, they win), or remap the base classes via `"architecture"` (merged over `DefaultArchitecture`).
+
+> **Line endings**: `Render` normalizes all output to LF. Lines otherwise come from three uncoordinated sources (the `.scriban` files per checkout, C# literals with `\n`, and `Environment.NewLine` via `AppendLine`); collapsing to LF at the end makes output deterministic and clean regardless of OS.
 
 ---
 
@@ -181,7 +184,7 @@ If a token doesn't appear in the map, `{{IT}}` is left **literally in the output
 
 `IFileMutator` exists because some files are **shared across entities** — DI containers, the DbContext, NavMenu — and a fresh write would clobber existing entities. So instead of templating them, we read them, patch them, write them.
 
-Four implementations cover everything:
+Three implementations cover everything:
 
 ### `DiRegistrationMutator`
 Generic: takes a list of `usingLines`, a `registrationLine` (e.g. `services.AddScoped<IOrderService, OrderService>();`), and a `markerForLastRegistration` (a substring like `"services.AddScoped<I"`). Idempotent — if the registration line already exists, no-op.
@@ -195,10 +198,9 @@ Where it's wired: `GenerationPlan.Build` constructs **one per DI file** (DataAcc
 ### `NavMenuMutator`
 Looks for `href="entityname"` to detect existing entries (idempotent). If the entity has `RequireAuth`, inserts the `<div class="nav-item">…<NavLink>…` block before the outer `</Authorized>`; otherwise before `</nav>`. Indentation is auto-detected from the anchor line.
 
-### `CsprojReferenceMutator`
-Adds a `<ProjectReference Include="...">` to a `.csproj` (idempotent — checks the `Include` attribute). Used in server-mode so the models `.csproj` references the paging project (`config.PagingProjectReference`), needed because the generated `{Entity}Filter` inherits `PagedQuery`.
+All three are **anchor-based**: they fail loud if their anchor is missing rather than silently dropping the change.
 
-All four are **anchor-based**: they fail loud if their anchor is missing rather than silently dropping the change.
+> Server-mode patches **no** `.csproj`: the paging types (`PagedQuery` + `PagedResult<T>`) are generated self-contained in `Application.Models/Paging.cs` (see `Application.Paging.scriban`), so no project references are ever added.
 
 ---
 
@@ -210,8 +212,9 @@ All four are **anchor-based**: they fail loud if their anchor is missing rather 
 Domain.Entity      → {BaseNamespace}.Domain.Entities/{Entity}.cs
 Application.Model  → {BaseNamespace}.Application.Models/App/{Entity}.cs
 Application.Filter → {BaseNamespace}.Application.Models/App/{Entity}Filter.cs   (server only)
+Application.Paging → {BaseNamespace}.Application.Models/Paging.cs               (server only, self-contained)
 Application.Contract / Service        ← business logic, builds predicates from Filter
-Application.Persistence (I{Entity}DA) ← port, takes PagedQuery + IEnumerable<Expression<Func<...>>>
+Application.Persistence (I{Entity}DA) ← port, returns (IReadOnlyList<TEntity> Items, int Total); takes predicates + skip/take
 Application.Mapper                    ← {Entity}Mapper, ToModel / ToEntity / ToModelList
 DataAccess ({Entity}DA)               ← adapter, EF Core LINQ implementation
 Api.Controller                        ← REST surface, POST /api/{entity}/query for server mode
@@ -220,7 +223,7 @@ Client.Index.razor + .razor.cs        ← Blazor page (client or server variant)
 Client.Edit.razor  + .razor.cs        ← Blazor page (single shared template)
 ```
 
-For client mode, drop `Application.Filter` and swap the Index variant.
+For client mode, drop `Application.Filter` + `Application.Paging` and swap the Index variant.
 
 ---
 
@@ -245,9 +248,14 @@ For client mode, drop `Application.Filter` and swap the Index variant.
 3. Add `{{MY_TOKEN}}` to whichever template needs it. Rebuild.
 
 ### I want to target another solution / change the layout or templates
-1. **No code**: add a `chetogen.json` (`chetogen init`) with `baseNamespace`, `paths` overrides, `excludeTemplates`, and/or `tokens`.
+1. **No code**: add a `chetogen.json` (`chetogen init`) with `baseNamespace`, `paths`/`architecture` overrides, `excludeTemplates`/`excludeMutators`, and/or `tokens`.
 2. **Own templates**: `chetogen init --with-templates` copies the set to `chetogen-templates/`; edit only what you want (the rest falls back to the built-in set) and point `templatesDirectory` at it.
 3. Built-in layout defaults: `GeneratorConfig.DefaultPaths`. Namespace inference and loading live in `ConfigLoader`.
+
+### I want to target ANOTHER architecture (different base classes / ROP wrapper)
+1. **No code or templates**: in `chetogen.json`, override the `"architecture"` keys that differ (e.g. `ResultType`/`ResultIsSuccess` if your ROP wrapper is named differently, or `EntityBase`/`EntityUsings` for another base class). It merges over `DefaultArchitecture`; the rest falls back to defaults. `chetogen init` → *"map to my own base classes"* dumps the whole block.
+2. Values accept `{BaseNamespace}`/`{Entity}`/`{EntityCamel}`/`{Id}`/`{EventBusCtorParam}`/`{EventBusBaseArg}` (see `ExpandArchitecture`).
+3. **If you need a new architecture token**: add the key to `GeneratorConfig.DefaultArchitecture`, the `["ARCH_…"] = Arch("…")` entry in `BuildTokens`, and use `{{ARCH_…}}` in the template. Remember: these tokens **remap** base classes — they don't change the generated body (that's a template).
 
 ### I want to add a new shared-file patch
 1. Implement `IFileMutator` (existing ones are 40–115 LOC; copy the closest fit).
@@ -256,7 +264,7 @@ For client mode, drop `Application.Filter` and swap the Index variant.
 4. Wire it in `GenerationPlan.Build`'s `mutators` list.
 
 ### I want to change the CLI surface
-- All flags live in `GenerateCommand.Settings` as `[CommandOption]` properties. Resolve them inside `BuildEntitySpec` (with an interactive fallback if it's a meaningful choice).
+- All flags live in `GenerateCommand.Settings` as `[CommandOption]` properties. Resolve them inside the dedicated resolvers (`ResolveEntityBase`/`ResolveOptions`, with an interactive fallback if it's a meaningful choice).
 
 ### I want to see what would be generated without writing
 - `--dry-run`. Hits every code path except the actual `File.WriteAllTextAsync` and mutator writes.

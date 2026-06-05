@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 using ChetoGen.Configuration;
 using ChetoGen.Generator;
 using ChetoGen.Generator.Mutators;
@@ -21,7 +20,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         public string? IdType { get; init; }
 
         [CommandOption("-p|--prop <PROPERTY>")]
-        [Description("Property in the form 'Name:type[:flag1[:flag2...]]'. Flags: required, filter|nofilter, hidden|list, sort|nosort. Repeatable.")]
+        [Description("Property in the form 'Name:type' with optional ':flag' suffixes. Flags: required, filter|nofilter, hidden|list, sort|nosort. Repeatable.")]
         public string[]? Properties { get; init; }
 
         [CommandOption("--icon <ICON>")]
@@ -92,11 +91,16 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var paths = new PathResolver(loaded.SolutionRoot, config);
 
         RenderContextBar(loaded, settings);
+        RenderConfiguration(config);
+
+        // Non-interactive when --yes OR stdin is redirected (CI, piped input): Spectre prompts and
+        // Console.ReadKey can't run there, so fall back to flags/defaults instead of crashing.
+        var interactive = !settings.Yes && !Console.IsInputRedirected;
 
         EntityBase entityBase;
         try
         {
-            entityBase = ResolveEntityBase(settings, paths);
+            entityBase = ResolveEntityBase(settings, paths, interactive);
         }
         catch (Exception ex)
         {
@@ -104,14 +108,13 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             return 1;
         }
 
-        var interactive = !settings.Yes;
         var properties = entityBase.Properties;
 
         EntitySpec entity;
         GenerationPlan plan;
         while (true)
         {
-            // The options are a back-navigable wizard (Esc = volver). A null result means the user
+            // The options are a back-navigable wizard (Esc = back). A null result means the user
             // backed out before the first question, so re-open the property editor and start over.
             var options = ResolveOptions(settings, interactive, properties);
             if (options is null)
@@ -132,15 +135,15 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             if (!interactive || settings.DryRun)
                 break;
 
-            var proceed = BackableConfirm("[bold mediumpurple1]❯[/] [bold]¿Proceder con la generación?[/]", defaultYes: true);
+            var proceed = BackableConfirm("[bold mediumpurple1]❯[/] [bold]Proceed with generation?[/]", defaultYes: true);
             if (proceed == Ask.Back)
-                continue;                       // volver: re-ask the options and re-render the preview
+                continue;                       // back: re-ask the options and re-render the preview
             if (proceed == Ask.No)
             {
-                AnsiConsole.MarkupLine("[grey]✗ Cancelado por el usuario.[/]");
+                AnsiConsole.MarkupLine("[grey]✗ Cancelled by the user.[/]");
                 return 0;
             }
-            break;                              // sí → generar
+            break;                              // yes → generate
         }
 
         var renderer = new TemplateRenderer(config);
@@ -158,7 +161,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         AnsiConsole.Write(new Padder(fig).Padding(1, 0, 1, 0));
 
         var tagline = new Markup(
-            "  [grey]✦[/] [bold mediumpurple1]Generador de CRUD[/] [grey]·[/] [grey]capas[/] " +
+            "  [grey]✦[/] [bold mediumpurple1]CRUD generator[/] [grey]·[/] [grey]layers[/] " +
             "[magenta]Domain[/] [grey]›[/] [blue]Application[/] [grey]›[/] [violet]Infra[/] [grey]›[/] " +
             "[gold1]Api[/] [grey]›[/] [aqua]Client[/]  [grey]✦[/]");
         AnsiConsole.Write(tagline);
@@ -176,15 +179,78 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         grid.AddRow("[grey]▸ Namespace[/]", $"[bold white]{loaded.Config.BaseNamespace.EscapeMarkup()}[/]");
         grid.AddRow("[grey]▸ Config[/]", loaded.ConfigFilePath is { } cfg
             ? $"[white]{Path.GetFileName(cfg).EscapeMarkup()}[/]"
-            : "[grey]defaults (sin chetogen.json; namespace inferido del .slnx)[/]");
+            : "[grey]defaults (no chetogen.json; namespace inferred from .slnx)[/]");
         if (settings.DryRun)
-            grid.AddRow("[grey]▸ Modo[/]", "[bold yellow on grey15]  DRY-RUN  [/] [grey]no se escribe nada en disco[/]");
+            grid.AddRow("[grey]▸ Mode[/]", "[bold yellow on grey15]  DRY-RUN  [/] [grey]nothing is written to disk[/]");
         else
-            grid.AddRow("[grey]▸ Modo[/]", "[bold green]✔ APPLY[/] [grey]se escribirán archivos en disco[/]");
+            grid.AddRow("[grey]▸ Mode[/]", "[bold green]✔ APPLY[/] [grey]files will be written to disk[/]");
         if (settings.Yes)
-            grid.AddRow("[grey]▸ Prompts[/]", "[grey]desactivados (--yes)[/]");
+            grid.AddRow("[grey]▸ Prompts[/]", "[grey]disabled (--yes)[/]");
 
         AnsiConsole.Write(new Padder(grid).Padding(2, 0, 0, 1));
+    }
+
+    /// <summary>
+    /// Surfaces the resolved <see cref="GeneratorConfig"/> so what the tool will do is visible up front:
+    /// the names/toggles in effect, the base-type/result seams (architecture), and the full output layout
+    /// (paths). Anything a <c>chetogen.json</c> overrode from the built-in defaults is flagged (★); the rest
+    /// is shown muted as default. Rendered as aligned two-column grids — the same idiom as the context bar.
+    /// </summary>
+    private static void RenderConfiguration(GeneratorConfig config)
+    {
+        var ns = config.BaseNamespace;
+        string ExpandNs(string template) => template.Replace("{BaseNamespace}", ns, StringComparison.Ordinal);
+
+        AnsiConsole.Write(new Rule("[bold mediumpurple1]◈ Active configuration[/]").RuleStyle("grey39").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var summary = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
+        summary.AddRow("[grey]▸ AppHost[/]", $"[white]{ExpandNs(config.AppHostProject).EscapeMarkup()}[/]");
+        summary.AddRow("[grey]▸ Templates[/]", config.TemplatesDirectory is { } dir
+            ? $"[white]{dir.EscapeMarkup()}[/] [grey](custom + built-in fallback)[/]"
+            : "[grey]built-in[/]");
+
+        // Architecture seams: default vs the keys a chetogen.json remapped.
+        var archOverrides = config.Architecture
+            .Where(kv => !GeneratorConfig.DefaultArchitecture.TryGetValue(kv.Key, out var d) || d != kv.Value)
+            .Select(kv => kv.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+        summary.AddRow("[grey]▸ Architecture[/]", archOverrides.Count == 0
+            ? "[grey]default (Clean Architecture: BaseEntity, BaseService, Result…)[/]"
+            : $"[yellow]{archOverrides.Count} override[/] [grey]· rest default[/]");
+        foreach (var key in archOverrides)
+            summary.AddRow(string.Empty, $"[yellow]★ {key.EscapeMarkup()}[/] [grey]=[/] [white]{config.Architecture[key].Replace("\n", "\\n", StringComparison.Ordinal).EscapeMarkup()}[/]");
+
+        var pathOverrides = config.Paths
+            .Where(kv => !GeneratorConfig.DefaultPaths.TryGetValue(kv.Key, out var d) || d != kv.Value)
+            .Select(kv => kv.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        summary.AddRow("[grey]▸ Paths[/]", pathOverrides.Count == 0
+            ? "[grey]default layout (below)[/]"
+            : $"[yellow]{pathOverrides.Count} override[/] [grey]· rest default (below)[/]");
+
+        if (config.ExcludeTemplates.Count > 0)
+            summary.AddRow("[grey]▸ Layers excl.[/]", $"[yellow]{string.Join(", ", config.ExcludeTemplates).EscapeMarkup()}[/]");
+        if (config.ExcludeMutators.Count > 0)
+            summary.AddRow("[grey]▸ Mutators excl.[/]", $"[yellow]{string.Join(", ", config.ExcludeMutators).EscapeMarkup()}[/]");
+        foreach (var (key, value) in config.Tokens)
+            summary.AddRow("[grey]▸ Token[/]", $"[white]{key.EscapeMarkup()}[/] [grey]=[/] [white]{value.EscapeMarkup()}[/]");
+
+        AnsiConsole.Write(new Padder(summary).Padding(2, 0, 0, 1));
+
+        // Full output layout — one row per logical slot ({BaseNamespace} expanded, {Entity} kept literal).
+        var pathsGrid = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
+        foreach (var key in GeneratorConfig.DefaultPaths.Keys)
+        {
+            var template = config.Paths.TryGetValue(key, out var p) ? p : GeneratorConfig.DefaultPaths[key];
+            var pathDisplay = ExpandNs(template).EscapeMarkup();
+            var overridden = pathOverrides.Contains(key);
+            pathsGrid.AddRow(
+                overridden ? $"[yellow]★ {key.EscapeMarkup()}[/]" : $"[grey]{key.EscapeMarkup()}[/]",
+                overridden ? $"[white]{pathDisplay}[/]" : $"[grey50]{pathDisplay}[/]");
+        }
+        AnsiConsole.Write(new Padder(pathsGrid).Padding(4, 0, 0, 1));
     }
 
     private static async Task<Totals> ExecutePlanAsync(
@@ -202,13 +268,13 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var tokens = TemplateRenderer.BuildTokens(entity, config);
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[bold mediumpurple1]✦ Generando[/]").RuleStyle("grey39").LeftJustified());
+        AnsiConsole.Write(new Rule("[bold mediumpurple1]✦ Generating[/]").RuleStyle("grey39").LeftJustified());
         AnsiConsole.WriteLine();
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots2)
             .SpinnerStyle(Style.Parse("mediumpurple1"))
-            .StartAsync("Preparando...", async ctx =>
+            .StartAsync("Preparing...", async ctx =>
             {
                 foreach (var creation in plan.Creations)
                 {
@@ -218,7 +284,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
                     if (File.Exists(creation.TargetPath))
                     {
-                        AnsiConsole.MarkupLine($"  [yellow]○[/] [{layer.Color}]{layer.Icon} {layer.Tag}[/] [grey]{Rel(creation.TargetPath, paths)}[/]  [yellow](existe, omitido)[/]");
+                        AnsiConsole.MarkupLine($"  [yellow]○[/] [{layer.Color}]{layer.Icon} {layer.Tag}[/] [grey]{Rel(creation.TargetPath, paths)}[/]  [yellow](exists, skipped)[/]");
                         totals.Skipped++;
                         continue;
                     }
@@ -238,7 +304,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
                     totals.Created++;
                 }
 
-                ctx.Status("[orange3]✎ Actualizando archivos compartidos...[/]");
+                ctx.Status("[orange3]✎ Updating shared files...[/]");
                 ctx.Spinner(Spinner.Known.Aesthetic);
                 ctx.Refresh();
 
@@ -246,7 +312,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
                 {
                     if (!File.Exists(mutator.TargetPath))
                     {
-                        AnsiConsole.MarkupLine($"  [red]✗[/] [red]{Rel(mutator.TargetPath, paths)} no encontrado[/]");
+                        AnsiConsole.MarkupLine($"  [red]✗[/] [red]{Rel(mutator.TargetPath, paths)} not found[/]");
                         totals.Failed++;
                         continue;
                     }
@@ -288,7 +354,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
         var hasErrors = totals.Failed > 0;
         var statusColor = hasErrors ? "red" : "green";
-        var statusText = hasErrors ? "Completado con errores" : "Listo";
+        var statusText = hasErrors ? "Completed with errors" : "Done";
         var statusIcon = hasErrors ? "✗" : "✔";
 
         var grid = new Grid()
@@ -296,15 +362,15 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             .AddColumn(new GridColumn().NoWrap());
 
         grid.AddRow($"[bold {statusColor}]{statusIcon}[/]", $"[bold {statusColor}]{statusText}[/]");
-        grid.AddRow("[grey]✚ Creados[/]", $"[green]{totals.Created}[/]");
-        grid.AddRow("[grey]✎ Actualizados[/]", $"[aqua]{totals.Mutated}[/]");
-        grid.AddRow("[grey]○ Omitidos[/]", $"[yellow]{totals.Skipped}[/]");
+        grid.AddRow("[grey]✚ Created[/]", $"[green]{totals.Created}[/]");
+        grid.AddRow("[grey]✎ Updated[/]", $"[aqua]{totals.Mutated}[/]");
+        grid.AddRow("[grey]○ Skipped[/]", $"[yellow]{totals.Skipped}[/]");
         if (totals.Failed > 0)
-            grid.AddRow("[grey]✗ Fallidos[/]", $"[red]{totals.Failed}[/]");
+            grid.AddRow("[grey]✗ Failed[/]", $"[red]{totals.Failed}[/]");
 
         var panel = new Panel(grid)
         {
-            Header = new PanelHeader("[bold] ▣ Resumen [/]"),
+            Header = new PanelHeader("[bold] ▣ Summary [/]"),
             Border = BoxBorder.Double,
             BorderStyle = new Style(hasErrors ? Color.Red : Color.Green),
             Padding = new Padding(2, 1, 2, 1),
@@ -314,7 +380,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         if (settings.DryRun)
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]→ Dry-run: nada fue escrito en disco. Re-corré sin [/][bold yellow]--dry-run[/][yellow] para aplicar.[/]");
+            AnsiConsole.MarkupLine("[yellow]→ Dry-run: nothing was written to disk. Re-run without [/][bold yellow]--dry-run[/][yellow] to apply.[/]");
             return;
         }
 
@@ -322,13 +388,13 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             return;
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[bold mediumpurple1]❯❯ Próximos pasos[/]").RuleStyle("grey39").LeftJustified());
+        AnsiConsole.Write(new Rule("[bold mediumpurple1]❯❯ Next steps[/]").RuleStyle("grey39").LeftJustified());
 
         var appHost = config.Expand(config.AppHostProject);
         var next = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
-        next.AddRow("[green]❯[/] [bold green]1[/]", "[white]dotnet build[/] [grey]— compilar y validar[/]");
-        next.AddRow("[green]❯[/] [bold green]2[/]", "[white]dotnet ef migrations add Add<Entity>[/] [grey]— si necesitás migración de DB[/]");
-        next.AddRow("[green]❯[/] [bold green]3[/]", $"[white]dotnet run --project {appHost.EscapeMarkup()}[/] [grey]— levantar la app[/]");
+        next.AddRow("[green]❯[/] [bold green]1[/]", "[white]dotnet build[/] [grey]— build and validate[/]");
+        next.AddRow("[green]❯[/] [bold green]2[/]", "[white]dotnet ef migrations add Add<Entity>[/] [grey]— if you need a DB migration[/]");
+        next.AddRow("[green]❯[/] [bold green]3[/]", $"[white]dotnet run --project {appHost.EscapeMarkup()}[/] [grey]— run the app[/]");
         AnsiConsole.Write(new Padder(next).Padding(2, 1, 0, 1));
     }
 
@@ -345,10 +411,8 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
     private enum BoolStep { Blazor, Nav, EventBus, Done }
 
     /// <summary>The fixed parts of the spec (no back-navigation): name, id, properties, auth, icon, accent.</summary>
-    private static EntityBase ResolveEntityBase(Settings settings, PathResolver paths)
+    private static EntityBase ResolveEntityBase(Settings settings, PathResolver paths, bool interactive)
     {
-        var interactive = !settings.Yes;
-
         // Resolve flag-only values first so a bad --icon/--accent fails fast, before any prompt.
         var icon = ResolveIcon(settings);
         var accent = ResolveAccent(settings);
@@ -358,14 +422,14 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var properties = ResolveProperties(settings, interactive);
 
         if (properties.Count == 0)
-            AnsiConsole.MarkupLine("[yellow]→ Sin propiedades. Se generará con el body vacío (podés agregarlas después).[/]");
+            AnsiConsole.MarkupLine("[yellow]→ No properties. It will be generated with an empty body (you can add them later).[/]");
 
         return new EntityBase(name, idType, properties, !settings.NoAuth, icon, accent);
     }
 
     /// <summary>
     /// Resolves Blazor / NavMenu / EventBus / filter-mode / page-size. Interactive mode runs a
-    /// back-navigable wizard (Esc = paso anterior) over the three yes/no questions; returns null if
+    /// back-navigable wizard (Esc = previous step) over the three yes/no questions; returns null if
     /// the user backs out before the first one (so the caller re-opens the property editor).
     /// </summary>
     private static OptionChoices? ResolveOptions(Settings settings, bool interactive, IReadOnlyList<PropertySpec> properties)
@@ -400,9 +464,9 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             {
                 case BoolStep.Blazor:
                     if (settings.NoUi) { blazor = false; step = BoolStep.Nav; break; }
-                    switch (BackableConfirm("[bold mediumpurple1]❯[/] ¿Generar [bold]pantallas Blazor[/] [grey](Index + Edit)[/]?", defaultYes: true))
+                    switch (BackableConfirm("[bold mediumpurple1]❯[/] Generate [bold]Blazor pages[/] [grey](Index + Edit)[/]?", defaultYes: true))
                     {
-                        case Ask.Back: return false;                       // antes del primer paso → volver a propiedades
+                        case Ask.Back: return false;                       // before the first step → back to properties
                         case Ask.Yes: blazor = true; break;
                         default: blazor = false; break;
                     }
@@ -411,7 +475,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
                 case BoolStep.Nav:
                     if (!blazor || settings.NoNav) { nav = false; step = BoolStep.EventBus; break; }
-                    switch (BackableConfirm("[bold mediumpurple1]❯[/] ¿Agregar un [bold]NavLink[/] en NavMenu.razor?", defaultYes: true))
+                    switch (BackableConfirm("[bold mediumpurple1]❯[/] Add a [bold]NavLink[/] in NavMenu.razor?", defaultYes: true))
                     {
                         case Ask.Back:
                             if (settings.NoUi) return false;
@@ -424,10 +488,10 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
                 case BoolStep.EventBus:
                     if (settings.EventBus) { eventBus = true; step = BoolStep.Done; break; }
-                    switch (BackableConfirm("[bold mediumpurple1]❯[/] ¿Publicar un evento al [bold]event bus[/] cuando se cree una nueva instancia?", defaultYes: false))
+                    switch (BackableConfirm("[bold mediumpurple1]❯[/] Publish an event to the [bold]event bus[/] when a new instance is created?", defaultYes: false))
                     {
                         case Ask.Back:
-                            // volver al paso anterior que efectivamente se preguntó
+                            // back to the previous step that was actually asked
                             if (blazor && !settings.NoNav) step = BoolStep.Nav;
                             else if (!settings.NoUi) step = BoolStep.Blazor;
                             else return false;
@@ -442,26 +506,25 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
     }
 
     /// <summary>
-    /// Yes/No confirm that also accepts Esc to go back. Enter = default, S/Y = sí, N = no. Lets the
+    /// Yes/No confirm that also accepts Esc to go back. Enter = default, Y = yes, N = no. Lets the
     /// interactive flow be navigable instead of one-way.
     /// </summary>
     private static Ask BackableConfirm(string markup, bool defaultYes)
     {
-        AnsiConsole.Markup($"{markup} [grey]({(defaultYes ? "S/n" : "s/N")} · Esc = volver)[/] ");
+        AnsiConsole.Markup($"{markup} [grey]({(defaultYes ? "Y/n" : "y/N")} · Esc = back)[/] ");
         while (true)
         {
             var key = Console.ReadKey(intercept: true).Key;
             switch (key)
             {
                 case ConsoleKey.Escape:
-                    AnsiConsole.MarkupLine("[grey]↩ volver[/]");
+                    AnsiConsole.MarkupLine("[grey]↩ back[/]");
                     return Ask.Back;
                 case ConsoleKey.Enter:
-                    AnsiConsole.MarkupLine(defaultYes ? "[aqua]sí[/]" : "[aqua]no[/]");
+                    AnsiConsole.MarkupLine(defaultYes ? "[aqua]yes[/]" : "[aqua]no[/]");
                     return defaultYes ? Ask.Yes : Ask.No;
                 case ConsoleKey.Y:
-                case ConsoleKey.S:
-                    AnsiConsole.MarkupLine("[aqua]sí[/]");
+                    AnsiConsole.MarkupLine("[aqua]yes[/]");
                     return Ask.Yes;
                 case ConsoleKey.N:
                     AnsiConsole.MarkupLine("[aqua]no[/]");
@@ -477,22 +540,22 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         if (string.IsNullOrWhiteSpace(name))
         {
             if (!interactive)
-                throw new ArgumentException("Falta el nombre de la entidad. Pasalo como argumento (ej: 'generate Order') o no uses --yes.");
+                throw new ArgumentException("Entity name is missing. Pass it as an argument (e.g. 'generate Order') or don't use --yes.");
 
             AnsiConsole.WriteLine();
-            AnsiConsole.Write(new Rule("[bold mediumpurple1]✦ Definición de la entidad[/]").RuleStyle("grey39").LeftJustified());
+            AnsiConsole.Write(new Rule("[bold mediumpurple1]✦ Entity definition[/]").RuleStyle("grey39").LeftJustified());
             AnsiConsole.WriteLine();
 
             name = AnsiConsole.Prompt(
-                new TextPrompt<string>("[bold mediumpurple1]❯[/] Nombre de la entidad [grey](PascalCase, singular)[/]")
+                new TextPrompt<string>("[bold mediumpurple1]❯[/] Entity name [grey](PascalCase, singular)[/]")
                     .PromptStyle("aqua")
                     .Validate(static raw => Naming.IsValidIdentifier(raw?.Trim())
                         ? ValidationResult.Success()
-                        : ValidationResult.Error("Sólo letras, dígitos o '_', empezando con letra o '_'")));
+                        : ValidationResult.Error("Only letters, digits or '_', starting with a letter or '_'")));
         }
         else if (!Naming.IsValidIdentifier(name))
         {
-            throw new ArgumentException($"Nombre de entidad inválido '{name}'. Usá sólo letras, dígitos o '_', empezando con letra o '_'.");
+            throw new ArgumentException($"Invalid entity name '{name}'. Use only letters, digits or '_', starting with a letter or '_'.");
         }
 
         name = Naming.Capitalize(name.Trim());
@@ -500,7 +563,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         // Heads-up if the slice already exists. Existing files are skipped and shared files are
         // not duplicated, so this is informational — but better to know before generating.
         if (interactive && File.Exists(paths.DomainEntity(name)))
-            AnsiConsole.MarkupLine($"  [yellow]○[/] [grey]Ya existe[/] [white]{name.EscapeMarkup()}[/][grey]: los archivos existentes se omiten y los compartidos no se duplican.[/]");
+            AnsiConsole.MarkupLine($"  [yellow]○[/] [grey]Already exists[/] [white]{name.EscapeMarkup()}[/][grey]: existing files are skipped and shared files are not duplicated.[/]");
 
         return name;
     }
@@ -512,7 +575,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         {
             idType = interactive
                 ? AnsiConsole.Prompt(new SelectionPrompt<string>()
-                    .Title("[bold mediumpurple1]❯[/] Tipo del Id")
+                    .Title("[bold mediumpurple1]❯[/] Id type")
                     .HighlightStyle(Style.Parse("aqua"))
                     .AddChoices("long", "int", "Guid"))
                 : "long";
@@ -523,7 +586,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             "long" or "int64" => "long",
             "int" or "int32" => "int",
             "guid" => "Guid",
-            _ => throw new ArgumentException($"Tipo de Id no soportado '{idType}'. Usá long, int o Guid.")
+            _ => throw new ArgumentException($"Unsupported Id type '{idType}'. Use long, int or Guid.")
         };
     }
 
@@ -548,7 +611,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var accent = settings.Accent?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(accent)) return null;
         if (accent is not ("primary" or "success" or "info" or "warning" or "danger" or "secondary"))
-            throw new ArgumentException($"Acento no soportado '{accent}'. Usá primary, success, info, warning, danger o secondary.");
+            throw new ArgumentException($"Unsupported accent '{accent}'. Use primary, success, info, warning, danger or secondary.");
         return accent;
     }
 
@@ -560,10 +623,10 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
     private static readonly string[] PropertyTypes =
         ["string", "int", "long", "decimal", "double", "bool", "DateTime", "Guid"];
 
-    private const string FlagRequired = "Requerido";
-    private const string FlagFilter = "Filtrable en el Index";
-    private const string FlagList = "Mostrar en la tabla";
-    private const string FlagSort = "Columna ordenable";
+    private const string FlagRequired = "Required";
+    private const string FlagFilter = "Filterable in Index";
+    private const string FlagList = "Show in table";
+    private const string FlagSort = "Sortable column";
 
     private enum PropertyAction { Add, Edit, Remove, Done }
 
@@ -572,8 +635,8 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var properties = new List<PropertySpec>();
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[bold mediumpurple1]✎ Propiedades[/]").RuleStyle("grey39").LeftJustified());
-        AnsiConsole.MarkupLine("[grey]Agregá, editá o quitá campos. La tabla refleja el estado actual.[/]");
+        AnsiConsole.Write(new Rule("[bold mediumpurple1]✎ Properties[/]").RuleStyle("grey39").LeftJustified());
+        AnsiConsole.MarkupLine("[grey]Add, edit or remove fields. The table reflects the current state.[/]");
         AnsiConsole.WriteLine();
 
         while (true)
@@ -581,14 +644,14 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             RenderPropertiesTable(properties);
 
             var action = AnsiConsole.Prompt(new SelectionPrompt<PropertyAction>()
-                .Title("[grey]¿Qué querés hacer?[/]")
+                .Title("[grey]What do you want to do?[/]")
                 .HighlightStyle(Style.Parse("aqua"))
                 .UseConverter(a => a switch
                 {
-                    PropertyAction.Add => "✚  Agregar propiedad",
-                    PropertyAction.Edit => "✎  Editar una propiedad",
-                    PropertyAction.Remove => "−  Quitar una propiedad",
-                    _ => "❯  Listo, continuar",
+                    PropertyAction.Add => "✚  Add property",
+                    PropertyAction.Edit => "✎  Edit a property",
+                    PropertyAction.Remove => "−  Remove a property",
+                    _ => "❯  Done, continue",
                 })
                 .AddChoices(BuildActionChoices(properties.Count)));
 
@@ -599,7 +662,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
                     break;
 
                 case PropertyAction.Edit:
-                    var toEdit = ChooseProperty(properties, "editar");
+                    var toEdit = ChooseProperty(properties, "edit");
                     if (toEdit is not null)
                     {
                         var idx = properties.IndexOf(toEdit);
@@ -608,7 +671,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
                     break;
 
                 case PropertyAction.Remove:
-                    var toRemove = ChooseProperty(properties, "quitar");
+                    var toRemove = ChooseProperty(properties, "remove");
                     if (toRemove is not null)
                         properties.Remove(toRemove);
                     break;
@@ -630,10 +693,10 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var choices = Enumerable.Range(0, properties.Count).Append(-1);
 
         var idx = AnsiConsole.Prompt(new SelectionPrompt<int>()
-            .Title($"[grey]¿Cuál querés {verb}?[/]")
+            .Title($"[grey]Which one do you want to {verb}?[/]")
             .HighlightStyle(Style.Parse("aqua"))
             .UseConverter(i => i < 0
-                ? "↩  Volver"
+                ? "↩  Back"
                 : $"{i + 1}. {properties[i].Name} ({properties[i].Type})")
             .AddChoices(choices));
 
@@ -645,8 +708,8 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var isEdit = existing is not null;
 
         var namePrompt = new TextPrompt<string>(isEdit
-                ? "  [grey]·[/] Nombre [grey](Enter mantiene el actual)[/]"
-                : "  [grey]·[/] Nombre de la propiedad")
+                ? "  [grey]·[/] Name [grey](Enter keeps the current one)[/]"
+                : "  [grey]·[/] Property name")
             .PromptStyle("white")
             .Validate(candidate => ValidatePropertyName(candidate, existing, siblings));
 
@@ -656,7 +719,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var name = Naming.Capitalize(AnsiConsole.Prompt(namePrompt).Trim());
 
         var type = AnsiConsole.Prompt(new SelectionPrompt<string>()
-            .Title($"    [grey]Tipo para[/] [yellow]{name.EscapeMarkup()}[/]")
+            .Title($"    [grey]Type for[/] [yellow]{name.EscapeMarkup()}[/]")
             .HighlightStyle(Style.Parse("aqua"))
             .AddChoices(TypeChoices(existing?.Type)));
 
@@ -687,10 +750,10 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
     private static MultiSelectionPrompt<string> BuildFlagPrompt(string name, PropertySpec? existing, string type)
     {
         var prompt = new MultiSelectionPrompt<string>()
-            .Title($"    [grey]Opciones para[/] [yellow]{name.EscapeMarkup()}[/]")
+            .Title($"    [grey]Options for[/] [yellow]{name.EscapeMarkup()}[/]")
             .NotRequired()
             .HighlightStyle(Style.Parse("aqua"))
-            .InstructionsText("[grey](espacio = marcar · Enter = confirmar)[/]")
+            .InstructionsText("[grey](space = toggle · Enter = confirm)[/]")
             .AddChoices(FlagRequired, FlagFilter, FlagList, FlagSort);
 
         // Pre-select sensible defaults for new props, or the current values when editing.
@@ -712,10 +775,10 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         var name = raw?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(name))
-            return ValidationResult.Error("El nombre es obligatorio");
+            return ValidationResult.Error("Name is required");
 
         if (!Naming.IsValidIdentifier(name))
-            return ValidationResult.Error("Sólo letras, dígitos o '_', empezando con letra o '_'");
+            return ValidationResult.Error("Only letters, digits or '_', starting with a letter or '_'");
 
         var capitalized = Naming.Capitalize(name);
         var duplicate = siblings.Any(p =>
@@ -723,7 +786,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             string.Equals(p.Name, capitalized, StringComparison.OrdinalIgnoreCase));
 
         return duplicate
-            ? ValidationResult.Error($"Ya existe una propiedad '{capitalized}'")
+            ? ValidationResult.Error($"A property '{capitalized}' already exists")
             : ValidationResult.Success();
     }
 
@@ -740,7 +803,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             {
                 "client" or "cli" => FilterMode.Client,
                 "server" or "srv" or "api" => FilterMode.Server,
-                _ => throw new ArgumentException($"Modo de filtrado no soportado '{settings.FilterMode}'. Usá 'client' o 'server'."),
+                _ => throw new ArgumentException($"Unsupported filter mode '{settings.FilterMode}'. Use 'client' or 'server'."),
             };
         }
 
@@ -749,15 +812,15 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
         var hasFilterable = properties.Any(p => p.Filterable);
         var description = hasFilterable
-            ? "[grey](algunos campos son filtrables)[/]"
-            : "[grey](sin campos filtrables; igual podés elegir server para tener paginación)[/]";
+            ? "[grey](some fields are filterable)[/]"
+            : "[grey](no filterable fields; you can still choose server to get pagination)[/]";
 
         var choice = AnsiConsole.Prompt(new SelectionPrompt<string>()
-            .Title($"[bold mediumpurple1]❯[/] Modo de filtrado/paginación del Index {description}")
+            .Title($"[bold mediumpurple1]❯[/] Index filtering/pagination mode {description}")
             .HighlightStyle(Style.Parse("aqua"))
             .AddChoices(
-                "client  (carga todo y filtra en el navegador)",
-                "server  (manda filtro a la API + paginación)"));
+                "client  (loads everything and filters in the browser)",
+                "server  (sends a filter to the API + pagination)"));
 
         return choice.StartsWith("server", StringComparison.Ordinal) ? FilterMode.Server : FilterMode.Client;
     }
@@ -770,12 +833,12 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         if (mode == FilterMode.Client || !interactive)
             return 25;
 
-        return AnsiConsole.Prompt(new TextPrompt<int>("[bold mediumpurple1]❯[/] Tamaño de página por defecto")
+        return AnsiConsole.Prompt(new TextPrompt<int>("[bold mediumpurple1]❯[/] Default page size")
             .DefaultValue(25)
             .ShowDefaultValue()
             .Validate(static n => n is > 0 and <= 500
                 ? ValidationResult.Success()
-                : ValidationResult.Error("Debe ser entre 1 y 500")));
+                : ValidationResult.Error("Must be between 1 and 500")));
     }
 
     // ----------------------------------------------------------------------------------
@@ -798,14 +861,14 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             $"[bold {accentColor} on grey15]   bi-{entity.Icon.EscapeMarkup()}   [/]",
             $"[bold white]{entity.Name.EscapeMarkup()}[/]  [grey]·[/] plural [aqua]{entity.Plural.EscapeMarkup()}[/]");
         headerGrid.AddRow("[grey]# Id type[/]", $"[white]{entity.IdType}[/]");
-        headerGrid.AddRow("[grey]● Acento[/]", $"[{accentColor}]●[/] [white]{entity.Accent}[/]");
-        headerGrid.AddRow("[grey]▣ Blazor UI[/]", entity.GenerateBlazorPage ? "[green]✔ sí[/]" : "[grey]✘ no[/]");
-        headerGrid.AddRow("[grey]▸ NavMenu[/]", entity.GenerateBlazorPage && entity.RegisterInNavMenu ? "[green]✔ sí[/]" : "[grey]✘ no[/]");
-        headerGrid.AddRow("[grey]★ Authorize[/]", entity.RequireAuth ? "[green]✔ sí[/]" : "[grey]✘ no[/]");
-        headerGrid.AddRow("[grey]✉ Event bus[/]", entity.UseEventBus ? "[green]✔ sí (publica al crear)[/]" : "[grey]✘ no[/]");
-        headerGrid.AddRow("[grey]⛃ Filtrado[/]", entity.IsServerFiltering
+        headerGrid.AddRow("[grey]● Accent[/]", $"[{accentColor}]●[/] [white]{entity.Accent}[/]");
+        headerGrid.AddRow("[grey]▣ Blazor UI[/]", entity.GenerateBlazorPage ? "[green]✔ yes[/]" : "[grey]✘ no[/]");
+        headerGrid.AddRow("[grey]▸ NavMenu[/]", entity.GenerateBlazorPage && entity.RegisterInNavMenu ? "[green]✔ yes[/]" : "[grey]✘ no[/]");
+        headerGrid.AddRow("[grey]★ Authorize[/]", entity.RequireAuth ? "[green]✔ yes[/]" : "[grey]✘ no[/]");
+        headerGrid.AddRow("[grey]✉ Event bus[/]", entity.UseEventBus ? "[green]✔ yes (publishes on create)[/]" : "[grey]✘ no[/]");
+        headerGrid.AddRow("[grey]⛃ Filtering[/]", entity.IsServerFiltering
             ? $"[aqua]server[/] [grey](pageSize {entity.PageSize})[/]"
-            : "[white]client[/] [grey](carga todo, filtra en browser)[/]");
+            : "[white]client[/] [grey](loads everything, filters in browser)[/]");
 
         AnsiConsole.Write(new Panel(headerGrid)
         {
@@ -816,9 +879,9 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
         });
 
         if (entity.Properties.Count > 0)
-            AnsiConsole.Write(BuildPropertiesTable(entity.Properties, "[bold]✎ Propiedades[/]"));
+            AnsiConsole.Write(BuildPropertiesTable(entity.Properties, "[bold]✎ Properties[/]"));
         else
-            AnsiConsole.MarkupLine("[grey](sin propiedades)[/]");
+            AnsiConsole.MarkupLine("[grey](no properties)[/]");
 
         AnsiConsole.WriteLine();
     }
@@ -827,7 +890,7 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
     {
         if (properties.Count == 0)
         {
-            AnsiConsole.MarkupLine("  [grey]· Todavía no agregaste propiedades.[/]");
+            AnsiConsole.MarkupLine("  [grey]· No properties added yet.[/]");
             AnsiConsole.WriteLine();
             return;
         }
@@ -843,12 +906,12 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
             .Border(TableBorder.Rounded)
             .BorderColor(Color.Grey39)
             .AddColumn("[grey]#[/]")
-            .AddColumn("[bold]Nombre[/]")
-            .AddColumn("[bold]Tipo[/]")
+            .AddColumn("[bold]Name[/]")
+            .AddColumn("[bold]Type[/]")
             .AddColumn("[bold]Req[/]")
-            .AddColumn("[bold]Filtra[/]")
-            .AddColumn("[bold]Lista[/]")
-            .AddColumn("[bold]Ordena[/]");
+            .AddColumn("[bold]Filter[/]")
+            .AddColumn("[bold]List[/]")
+            .AddColumn("[bold]Sort[/]");
 
         if (title is not null)
             table.Title(title);
@@ -884,12 +947,12 @@ internal sealed class GenerateCommand : AsyncCommand<GenerateCommand.Settings>
 
     private static void RenderPlan(GenerationPlan plan, PathResolver paths)
     {
-        AnsiConsole.Write(new Rule("[bold mediumpurple1]◈ Plan de generación[/]").RuleStyle("grey39").LeftJustified());
+        AnsiConsole.Write(new Rule("[bold mediumpurple1]◈ Generation plan[/]").RuleStyle("grey39").LeftJustified());
         AnsiConsole.WriteLine();
 
         var tree = new Tree(
-            $"[bold]▸ Archivos[/] [grey]·[/] [green]✚ {plan.Creations.Count}[/] [grey]a crear[/], " +
-            $"[aqua]✎ {plan.Mutators.Count}[/] [grey]a actualizar[/]")
+            $"[bold]▸ Files[/] [grey]·[/] [green]✚ {plan.Creations.Count}[/] [grey]to create[/], " +
+            $"[aqua]✎ {plan.Mutators.Count}[/] [grey]to update[/]")
         {
             Style = new Style(Color.Grey50),
         };

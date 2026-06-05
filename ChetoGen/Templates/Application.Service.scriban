@@ -1,12 +1,10 @@
 {{SERVICE_USINGS}}using {{BASE_NS}}.Application.Contracts.{{ENTITY}};
-using {{BASE_NS}}.Application.Implementations.Base;
-using {{BASE_NS}}.Application.Mappers;
+{{ARCH_SERVICE_IMPL_USINGS}}using {{BASE_NS}}.Application.Mappers;
 using {{BASE_NS}}.Application.Persistence;
-using Microsoft.Extensions.Caching.Hybrid;
-using {{ENTITY}}Entity = {{BASE_NS}}.Domain.Entities.{{ENTITY}};
+{{ARCH_CACHE_USING}}using {{ENTITY}}Entity = {{BASE_NS}}.Domain.Entities.{{ENTITY}};
 using {{ENTITY}}Model = {{BASE_NS}}.Application.Models.App.{{ENTITY}};
 
 namespace {{BASE_NS}}.Application.Implementations.{{ENTITY}};
 
-internal sealed class {{ENTITY}}Service(I{{ENTITY}}DA {{ENTITY_CAMEL}}DA, {{ENTITY}}Mapper mapper, HybridCache hybridCache)
-    : BaseService<{{ENTITY}}Entity, {{ENTITY}}Model, {{ID_TYPE}}>({{ENTITY_CAMEL}}DA, mapper, hybridCache), I{{ENTITY}}Service{{SERVICE_BODY}}
+internal sealed class {{ENTITY}}Service({{ARCH_SERVICE_CTOR}})
+    {{ARCH_SERVICE_BASE}}{{SERVICE_BODY}}

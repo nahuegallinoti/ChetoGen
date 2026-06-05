@@ -1,8 +1,7 @@
-{{CONTRACT_USINGS}}using {{BASE_NS}}.Application.Contracts.Base;
-
+{{CONTRACT_USINGS}}{{ARCH_SERVICE_CONTRACT_USINGS}}
 namespace {{BASE_NS}}.Application.Contracts.{{ENTITY}};
 
-public interface I{{ENTITY}}Service : IBaseService<Models.App.{{ENTITY}}, {{ID_TYPE}}>
+public interface I{{ENTITY}}Service{{ARCH_SERVICE_CONTRACT_BASE}}
 {
 {{CONTRACT_BODY}}
 }

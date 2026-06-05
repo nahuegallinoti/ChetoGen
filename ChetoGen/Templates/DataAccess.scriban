@@ -1,7 +1,6 @@
 {{DA_USINGS}}using {{BASE_NS}}.Application.Persistence;
-using {{BASE_NS}}.DataAccess.Implementations.Base;
-using {{BASE_NS}}.Domain.Entities;
+{{ARCH_DATAACCESS_USING}}using {{BASE_NS}}.Domain.Entities;
 
 namespace {{BASE_NS}}.DataAccess.Implementations;
 
-public sealed class {{ENTITY}}DA(AppDbContext context) : BaseDA<{{ENTITY}}, {{ID_TYPE}}>(context), I{{ENTITY}}DA{{DA_BODY}}
+public sealed class {{ENTITY}}DA({{ARCH_DATAACCESS_CTOR}}){{ARCH_DATAACCESS_BASE}}{{DA_BODY}}

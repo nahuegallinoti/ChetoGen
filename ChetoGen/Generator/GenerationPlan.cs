@@ -30,6 +30,9 @@ internal sealed class GenerationPlan
 
         if (entity.IsServerFiltering)
         {
+            // Self-contained paging types (PagedQuery + PagedResult<T>) live in the shared models
+            // project. Written once and skipped on later entities — needs no external project reference.
+            creations.Add(new(paths.ApplicationPaging, "Application.Paging.scriban", "Application.Paging"));
             creations.Add(new(paths.ApplicationFilter(entity.Name), "Application.Filter.scriban", "Application.Filter"));
         }
 
@@ -47,13 +50,6 @@ internal sealed class GenerationPlan
         // Each shared-file mutator carries a stable key so a consumer can drop the ones its
         // architecture lacks via "excludeMutators" (a classic MVC app has none of these).
         var keyed = new List<(string Key, IFileMutator Mutator)>();
-
-        if (entity.IsServerFiltering)
-        {
-            keyed.Add(("ModelsCsproj", new CsprojReferenceMutator(
-                paths.ApplicationModelsCsproj,
-                config.Expand(config.PagingProjectReference))));
-        }
 
         keyed.Add(("DbContext", new DbContextMutator(paths.AppDbContext)));
         keyed.Add(("DataAccessDI", new DiRegistrationMutator(

@@ -14,7 +14,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>chetogen</ToolCommandName>
     <PackageId>ChetoGen</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Nagu</Authors>
     <Description>Agnostic, configuration-driven CRUD slice generator for layered .NET solutions (Domain → Application → Infrastructure → Api → Client + Blazor). Ships default templates; consumers point at their own templates folder and a chetogen.json to generate code for any system.</Description>
     <PackageTags>codegen;scaffolding;crud;generator;dotnet-tool;blazor;aspire</PackageTags>

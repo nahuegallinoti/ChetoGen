@@ -45,7 +45,7 @@ internal sealed class PathResolver
     public string BlazorEditRazor(string entity) => Resolve(PathKeys.BlazorEditRazor, entity);
     public string BlazorEditCs(string entity) => Resolve(PathKeys.BlazorEditCs, entity);
 
-    public string ApplicationModelsCsproj => Resolve(PathKeys.ApplicationModelsCsproj);
+    public string ApplicationPaging => Resolve(PathKeys.ApplicationPaging);
     public string AppDbContext => Resolve(PathKeys.AppDbContext);
     public string DataAccessDI => Resolve(PathKeys.DataAccessDI);
     public string ApplicationDI => Resolve(PathKeys.ApplicationDI);

@@ -1,0 +1,47 @@
+namespace {{BASE_NS}}.Application.Models;
+
+/// <summary>
+/// Base autocontenida de filtros con paginación + orden (Skip/Take de toda la vida).
+/// El <c>{Entity}Filter</c> de server-mode hereda de acá; no requiere ningún proyecto de paging externo.
+/// </summary>
+public abstract class PagedQuery
+{
+    public const int DefaultPageSize = 25;
+    public const int MaxPageSize = 500;
+
+    /// <summary>Página pedida (base 1).</summary>
+    public int Page { get; set; } = 1;
+
+    /// <summary>Tamaño de página; se acota a 1..<see cref="MaxPageSize"/> en <see cref="ToSkipTake"/>.</summary>
+    public int PageSize { get; set; } = DefaultPageSize;
+
+    /// <summary>Columna por la que ordenar (null = orden por defecto, normalmente Id).</summary>
+    public string? SortBy { get; set; }
+
+    /// <summary><c>true</c> = descendente, <c>false</c> = ascendente.</summary>
+    public bool SortDesc { get; set; }
+
+    /// <summary>Traduce <see cref="Page"/>/<see cref="PageSize"/> a un <c>(Skip, Take)</c> acotado, listo para EF.</summary>
+    public (int Skip, int Take) ToSkipTake()
+    {
+        var size = PageSize is < 1 or > MaxPageSize ? DefaultPageSize : PageSize;
+        var page = Page < 1 ? 1 : Page;
+        return ((page - 1) * size, size);
+    }
+}
+
+/// <summary>
+/// Envoltorio de una página de resultados. Es serializable y viaja de la API al cliente.
+/// </summary>
+/// <typeparam name="T">Tipo de cada ítem de la página.</typeparam>
+public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize)
+{
+    /// <summary>Cantidad total de páginas para <see cref="Total"/> y <see cref="PageSize"/>.</summary>
+    public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(Total / (double)PageSize);
+
+    /// <summary>¿Existe una página anterior?</summary>
+    public bool HasPrevious => Page > 1;
+
+    /// <summary>¿Existe una página siguiente?</summary>
+    public bool HasNext => Page < TotalPages;
+}

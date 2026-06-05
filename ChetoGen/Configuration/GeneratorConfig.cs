@@ -10,6 +10,7 @@ internal static class PathKeys
     public const string DomainEntity = "DomainEntity";
     public const string ApplicationModel = "ApplicationModel";
     public const string ApplicationFilter = "ApplicationFilter";
+    public const string ApplicationPaging = "ApplicationPaging";
     public const string ApplicationContract = "ApplicationContract";
     public const string ApplicationService = "ApplicationService";
     public const string ApplicationMapper = "ApplicationMapper";
@@ -21,7 +22,6 @@ internal static class PathKeys
     public const string BlazorIndexCs = "BlazorIndexCs";
     public const string BlazorEditRazor = "BlazorEditRazor";
     public const string BlazorEditCs = "BlazorEditCs";
-    public const string ApplicationModelsCsproj = "ApplicationModelsCsproj";
     public const string AppDbContext = "AppDbContext";
     public const string DataAccessDI = "DataAccessDI";
     public const string ApplicationDI = "ApplicationDI";
@@ -49,16 +49,13 @@ internal sealed record GeneratorConfig
     /// <summary>AppHost project used only for the "next steps" run hint.</summary>
     public string AppHostProject { get; init; } = "{BaseNamespace}.AppHost";
 
-    /// <summary>Relative ProjectReference inserted into the models .csproj in server mode (the {Entity}Filter inherits PagedQuery).</summary>
-    public string PagingProjectReference { get; init; } = @"..\{BaseNamespace}.Domain.Paging\{BaseNamespace}.Domain.Paging.csproj";
-
     /// <summary>Friendly labels of pipeline steps to skip (e.g. "Client.Edit.razor"). Lets a consumer trim the generated slice.</summary>
     public IReadOnlyList<string> ExcludeTemplates { get; init; } = [];
 
     /// <summary>
     /// Keys of shared-file mutators to skip. The built-in mutators assume the default layout
     /// (AppDbContext, DI files, NavMenu); a different architecture excludes the ones it lacks.
-    /// Keys: DbContext, DataAccessDI, ApplicationDI, MappersDI, ClientProgram, NavMenu, ModelsCsproj.
+    /// Keys: DbContext, DataAccessDI, ApplicationDI, MappersDI, ClientProgram, NavMenu.
     /// </summary>
     public IReadOnlyList<string> ExcludeMutators { get; init; } = [];
 
@@ -67,6 +64,15 @@ internal sealed record GeneratorConfig
 
     /// <summary>Extra static <c>{{TOKEN}}</c> overrides merged into the template token map last (so they win).</summary>
     public IReadOnlyDictionary<string, string> Tokens { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The base types / wrappers the generated code sits on (base classes, base interfaces, the ROP
+    /// result wrapper, the cache). Defaults reproduce the built-in Clean Architecture layout; override
+    /// any key under <c>"architecture"</c> to target a different architecture <b>without editing templates</b>.
+    /// Values support the placeholders <c>{BaseNamespace}</c>, <c>{Entity}</c>, <c>{EntityCamel}</c>,
+    /// <c>{Id}</c>, <c>{EventBusCtorParam}</c>, <c>{EventBusBaseArg}</c>. See <see cref="DefaultArchitecture"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Architecture { get; init; } = DefaultArchitecture;
 
     public static GeneratorConfig CreateDefault(string baseNamespace) =>
         new() { BaseNamespace = baseNamespace };
@@ -91,6 +97,7 @@ internal sealed record GeneratorConfig
             [PathKeys.DomainEntity]            = "{BaseNamespace}.Domain.Entities/{Entity}.cs",
             [PathKeys.ApplicationModel]        = "{BaseNamespace}.Application.Models/App/{Entity}.cs",
             [PathKeys.ApplicationFilter]       = "{BaseNamespace}.Application.Models/App/{Entity}Filter.cs",
+            [PathKeys.ApplicationPaging]       = "{BaseNamespace}.Application.Models/Paging.cs",
             [PathKeys.ApplicationContract]     = "{BaseNamespace}.Application.Contracts/{Entity}/I{Entity}Service.cs",
             [PathKeys.ApplicationService]      = "{BaseNamespace}.Application.Implementations/{Entity}/{Entity}Service.cs",
             [PathKeys.ApplicationMapper]       = "{BaseNamespace}.Application.Mappers/{Entity}Mapper.cs",
@@ -102,12 +109,46 @@ internal sealed record GeneratorConfig
             [PathKeys.BlazorIndexCs]           = "{BaseNamespace}.Client/Components/Pages/{Entity}Index.razor.cs",
             [PathKeys.BlazorEditRazor]         = "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor",
             [PathKeys.BlazorEditCs]            = "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor.cs",
-            [PathKeys.ApplicationModelsCsproj] = "{BaseNamespace}.Application.Models/{BaseNamespace}.Application.Models.csproj",
             [PathKeys.AppDbContext]            = "{BaseNamespace}.DataAccess.Implementations/AppDbContext.cs",
             [PathKeys.DataAccessDI]            = "{BaseNamespace}.DataAccess.Implementations/DependencyInjection.cs",
             [PathKeys.ApplicationDI]           = "{BaseNamespace}.Application.Implementations/DependencyInjection.cs",
             [PathKeys.MappersDI]               = "{BaseNamespace}.Application.Mappers/DependencyInjection.cs",
             [PathKeys.ClientProgram]           = "{BaseNamespace}.Client/Program.cs",
             [PathKeys.NavMenu]                 = "{BaseNamespace}.Client/Components/Layout/NavMenu.razor",
+        };
+
+    /// <summary>
+    /// Built-in architecture seams (the Clean Architecture reference layout). Every value feeds an
+    /// <c>{{ARCH_*}}</c> template token after placeholder expansion. A consumer overrides only the
+    /// keys their architecture differs on (e.g. set <c>"ModelBase"</c> to <c>""</c> for plain models,
+    /// or remap <c>"ResultType"</c> if their ROP wrapper is named differently).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> DefaultArchitecture =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["EntityUsings"]              = "using {BaseNamespace}.Domain.Entities.Base;\n",
+            ["EntityBase"]                = " : BaseEntity<{Id}>",
+            ["ModelBase"]                 = " : BaseModel<{Id}>",
+            ["MapperBase"]                = " : BaseMapper<{Entity}Model, {Entity}Entity>",
+            ["ServiceContractUsings"]     = "using {BaseNamespace}.Application.Contracts.Base;\n",
+            ["ServiceContractBase"]       = " : IBaseService<Models.App.{Entity}, {Id}>",
+            ["PersistenceContractUsings"] = "using {BaseNamespace}.Application.Persistence.Base;\n",
+            ["PersistenceContractBase"]   = " : IBaseDA<{Entity}, {Id}>",
+            ["ServiceImplUsings"]         = "using {BaseNamespace}.Application.Implementations.Base;\n",
+            ["CacheUsing"]                = "using Microsoft.Extensions.Caching.Hybrid;\n",
+            ["ServiceCtor"]               = "I{Entity}DA {EntityCamel}DA, {Entity}Mapper mapper, HybridCache hybridCache",
+            ["ServiceBase"]               = ": BaseService<{Entity}Entity, {Entity}Model, {Id}>({EntityCamel}DA, mapper, hybridCache), I{Entity}Service",
+            ["DataAccessUsing"]           = "using {BaseNamespace}.DataAccess.Implementations.Base;\n",
+            ["DataAccessCtor"]            = "AppDbContext context",
+            ["DataAccessBase"]            = " : BaseDA<{Entity}, {Id}>(context), I{Entity}DA",
+            ["ControllerCtor"]            = "I{Entity}Service {EntityCamel}Service{EventBusCtorParam}, ILogger<{Entity}Controller> logger",
+            ["ControllerBase"]            = ": BaseController<{Entity}, {Id}, I{Entity}Service>({EntityCamel}Service{EventBusBaseArg}, logger)",
+            ["ApiClientUsing"]            = "using {BaseNamespace}.Domain.ROP;\n",
+            ["ApiClientCtor"]             = "IHttpClientFactory httpClientFactory",
+            ["ApiClientBase"]             = ": BaseApiClient(httpClientFactory, HttpClientNames.Api)",
+            ["ResultType"]                = "Result",
+            ["ResultIsSuccess"]           = "Success",
+            ["ResultValue"]               = "Value",
+            ["ResultErrors"]              = "Errors.FormatErrorMessages()",
         };
 }

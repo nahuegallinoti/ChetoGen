@@ -1,57 +1,54 @@
 {
   // ============================================================================================
-  //  ChetoGen — REFERENCIA COMPLETA de configuración (chetogen.json)
+  //  ChetoGen — COMPLETE configuration REFERENCE (chetogen.json)
   //  --------------------------------------------------------------------------------------------
-  //  Copiá este archivo a la raíz de tu solución como "chetogen.json" y dejá sólo lo que necesites.
-  //  TODAS las claves son opcionales (incluso "baseNamespace", que se infiere del nombre del .slnx).
-  //  El parser acepta comentarios "//" y comas finales.
+  //  Copy this file to your solution root as "chetogen.json" and keep only what you need.
+  //  EVERY key is optional (even "baseNamespace", which is inferred from the .slnx file name).
+  //  The parser accepts "//" comments and trailing commas.
   //
-  //  Esto es la config del archivo. Los FLAGS de línea de comandos son aparte:
-  //    chetogen generate <Entidad> [--id long|int|Guid] [-p "Nombre:tipo:flags"] [--filter-mode client|server]
+  //  This is the file config. The command-line FLAGS are separate:
+  //    chetogen generate <Entity> [--id long|int|Guid] [-p "Name:type:flags"] [--filter-mode client|server]
   //      [--page-size N] [--icon X] [--accent X] [--no-ui] [--no-nav] [--no-auth] [--event-bus]
-  //      [--dry-run] [-y|--yes] [--root <ruta>] [--config <ruta>]
+  //      [--dry-run] [-y|--yes] [--root <path>] [--config <path>]
   //    chetogen init [--with-templates] [--base-namespace <NS>] [--force]
-  //    (ver "chetogen generate --help")
+  //    (see "chetogen generate --help")
   // ============================================================================================
 
-  // [casi obligatorio] Prefijo de namespace/proyectos de TU solución. Reemplaza {BaseNamespace} en
-  // todos lados. Si lo omitís, se infiere del nombre del archivo de solución (Acme.slnx -> "Acme").
+  // [almost required] Namespace/project prefix of YOUR solution. Replaces {BaseNamespace}
+  // everywhere. If omitted, it's inferred from the solution file name (Acme.slnx -> "Acme").
   "baseNamespace": "AspireApp",
 
-  // Patrones para ubicar la raíz de la solución caminando hacia arriba desde el directorio actual.
+  // Patterns used to locate the solution root by walking up from the current directory.
   "rootMarkers": ["*.slnx", "*.sln"],
 
-  // Carpeta (relativa a este archivo, o absoluta) con templates propias que pisan/extienden el set
-  // integrado. ChetoGen busca cada template por nombre PRIMERO acá, y si no está, usa la integrada.
-  // null = usar siempre las integradas.
+  // Folder (relative to this file, or absolute) with your own templates that override/extend the
+  // built-in set. ChetoGen looks up each template by name HERE FIRST, and falls back to the built-in.
+  // null = always use the built-in templates.
   "templatesDirectory": "chetogen-templates",
 
-  // Proyecto que se muestra en el hint de "próximos pasos" al terminar de generar.
+  // Project shown in the "next steps" hint after generating.
   "appHostProject": "{BaseNamespace}.AppHost",
 
-  // <ProjectReference> que se agrega al .csproj de modelos en modo server (el {Entity}Filter hereda
-  // PagedQuery, que vive en el proyecto de paging). Sólo aplica en --filter-mode server.
-  "pagingProjectReference": "..\\{BaseNamespace}.Domain.Paging\\{BaseNamespace}.Domain.Paging.csproj",
-
-  // Pasos del pipeline a SALTEAR, por su "friendly label". Útil para recortar el slice generado.
-  // Labels disponibles:
+  // Pipeline steps to SKIP, by their "friendly label". Useful to trim the generated slice.
+  // Available labels:
   //   Domain.Entity, Application.Model, Application.Contract, Application.Service, Application.Mapper,
-  //   Application.Persistence, Application.Filter (sólo server), DataAccess, Api.Controller,
+  //   Application.Persistence, Application.Paging (server only), Application.Filter (server only), DataAccess, Api.Controller,
   //   Client.ApiClient, Client.Index.razor, Client.Index.razor.cs, Client.Edit.razor, Client.Edit.razor.cs
   "excludeTemplates": [],
 
-  // Mutadores de archivos compartidos a SALTEAR, por su clave. Una arquitectura distinta (p. ej. MVC
-  // clásico) que no tiene estos archivos compartidos los excluye a todos.
-  // Claves disponibles: DbContext, DataAccessDI, ApplicationDI, MappersDI, ClientProgram, NavMenu, ModelsCsproj
+  // Shared-file mutators to SKIP, by their key. A different architecture (e.g. classic MVC) that
+  // doesn't have these shared files excludes them all.
+  // Available keys: DbContext, DataAccessDI, ApplicationDI, MappersDI, ClientProgram, NavMenu
   "excludeMutators": [],
 
-  // Ruta de salida por cada "slot" lógico del pipeline. Se expanden {BaseNamespace} y {Entity};
-  // usá '/' como separador (se normaliza por SO). Estos son los DEFAULTS integrados — override sólo
-  // los que necesites (o remapealos a otra arquitectura, como hace el demo MVC).
+  // Output path for each logical pipeline "slot". {BaseNamespace} and {Entity} are expanded;
+  // use '/' as the separator (normalized per OS). These are the built-in DEFAULTS — override only
+  // the ones you need (or remap them to another architecture, like the MVC demo does).
   "paths": {
     "DomainEntity":            "{BaseNamespace}.Domain.Entities/{Entity}.cs",
     "ApplicationModel":        "{BaseNamespace}.Application.Models/App/{Entity}.cs",
     "ApplicationFilter":       "{BaseNamespace}.Application.Models/App/{Entity}Filter.cs",
+    "ApplicationPaging":       "{BaseNamespace}.Application.Models/Paging.cs",
     "ApplicationContract":     "{BaseNamespace}.Application.Contracts/{Entity}/I{Entity}Service.cs",
     "ApplicationService":      "{BaseNamespace}.Application.Implementations/{Entity}/{Entity}Service.cs",
     "ApplicationMapper":       "{BaseNamespace}.Application.Mappers/{Entity}Mapper.cs",
@@ -63,7 +60,6 @@
     "BlazorIndexCs":           "{BaseNamespace}.Client/Components/Pages/{Entity}Index.razor.cs",
     "BlazorEditRazor":         "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor",
     "BlazorEditCs":            "{BaseNamespace}.Client/Components/Pages/{Entity}Edit.razor.cs",
-    "ApplicationModelsCsproj": "{BaseNamespace}.Application.Models/{BaseNamespace}.Application.Models.csproj",
     "AppDbContext":            "{BaseNamespace}.DataAccess.Implementations/AppDbContext.cs",
     "DataAccessDI":            "{BaseNamespace}.DataAccess.Implementations/DependencyInjection.cs",
     "ApplicationDI":           "{BaseNamespace}.Application.Implementations/DependencyInjection.cs",
@@ -72,8 +68,64 @@
     "NavMenu":                 "{BaseNamespace}.Client/Components/Layout/NavMenu.razor"
   },
 
-  // Tokens {{TOKEN}} estáticos extra, mergeados AL FINAL (ganan sobre los integrados, incluido BASE_NS).
-  // Sirven para inyectar placeholders propios en tus templates customizadas.
+  // ── Architecture (base classes / interfaces / result wrapper) ───────────────────────────────
+  // The generated code sits on a "base architecture": entities on BaseEntity, services on
+  // BaseService, controllers on BaseController, a Result wrapper (ROP), etc. EACH of those seams
+  // is a configurable token here — so a single template set works for ANY architecture without
+  // touching the templates. These are the built-in DEFAULTS (reference Clean Architecture);
+  // override ONLY the keys that differ in your solution, the rest fall back to the default.
+  //
+  // Placeholders available in the values:
+  //   {BaseNamespace}  {Entity}  {EntityCamel}  {Id}  {EventBusCtorParam}  {EventBusBaseArg}
+  //
+  // Important: the generated body ASSUMES your base class provides the CRUD (GetAll/Get/Create/…).
+  // These tokens REMAP to YOUR equivalent base classes; they don't remove them. If you don't have
+  // base classes and want full bodies, copy the templates (`chetogen init --with-templates`) and edit them.
+  "architecture": {
+    // Domain entity.
+    "EntityUsings":              "using {BaseNamespace}.Domain.Entities.Base;\n",
+    "EntityBase":                " : BaseEntity<{Id}>",
+
+    // Application model (DTO) and its mapper.
+    "ModelBase":                 " : BaseModel<{Id}>",
+    "MapperBase":                " : BaseMapper<{Entity}Model, {Entity}Entity>",
+
+    // Service contract (I{Entity}Service) and repository contract (I{Entity}DA).
+    "ServiceContractUsings":     "using {BaseNamespace}.Application.Contracts.Base;\n",
+    "ServiceContractBase":       " : IBaseService<Models.App.{Entity}, {Id}>",
+    "PersistenceContractUsings": "using {BaseNamespace}.Application.Persistence.Base;\n",
+    "PersistenceContractBase":   " : IBaseDA<{Entity}, {Id}>",
+
+    // Service implementation: usings, cache, ctor params and the base list.
+    "ServiceImplUsings":         "using {BaseNamespace}.Application.Implementations.Base;\n",
+    "CacheUsing":                "using Microsoft.Extensions.Caching.Hybrid;\n",
+    "ServiceCtor":               "I{Entity}DA {EntityCamel}DA, {Entity}Mapper mapper, HybridCache hybridCache",
+    "ServiceBase":               ": BaseService<{Entity}Entity, {Entity}Model, {Id}>({EntityCamel}DA, mapper, hybridCache), I{Entity}Service",
+
+    // EF Core repository.
+    "DataAccessUsing":           "using {BaseNamespace}.DataAccess.Implementations.Base;\n",
+    "DataAccessCtor":            "AppDbContext context",
+    "DataAccessBase":            " : BaseDA<{Entity}, {Id}>(context), I{Entity}DA",
+
+    // API controller. {EventBus*} add the IMessageBus only when generated with --event-bus.
+    "ControllerCtor":            "I{Entity}Service {EntityCamel}Service{EventBusCtorParam}, ILogger<{Entity}Controller> logger",
+    "ControllerBase":            ": BaseController<{Entity}, {Id}, I{Entity}Service>({EntityCamel}Service{EventBusBaseArg}, logger)",
+
+    // Typed HTTP client.
+    "ApiClientUsing":            "using {BaseNamespace}.Domain.ROP;\n",
+    "ApiClientCtor":             "IHttpClientFactory httpClientFactory",
+    "ApiClientBase":             ": BaseApiClient(httpClientFactory, HttpClientNames.Api)",
+
+    // Result wrapper (ROP). Remap it if yours is named differently (e.g. Either/IsRight/Right).
+    // Used as Result<T> in ApiClients and as result.<OK>/result.<Value>/result.<Errors> in Blazor.
+    "ResultType":                "Result",
+    "ResultIsSuccess":           "Success",
+    "ResultValue":               "Value",
+    "ResultErrors":              "Errors.FormatErrorMessages()"
+  },
+
+  // Extra static {{TOKEN}} tokens, merged LAST (they win over the built-ins, including BASE_NS).
+  // Use them to inject your own placeholders into your custom templates.
   "tokens": {
     // "COMPANY": "Gugu Inc.",
     // "COPYRIGHT": "© 2026 Gugu"

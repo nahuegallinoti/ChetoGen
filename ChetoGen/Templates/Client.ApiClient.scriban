@@ -1,24 +1,23 @@
 using {{BASE_NS}}.Application.Models.App;
-using {{BASE_NS}}.Domain.ROP;
-{{API_CLIENT_EXTRA_USINGS}}
+{{ARCH_APICLIENT_USING}}{{API_CLIENT_EXTRA_USINGS}}
 namespace {{BASE_NS}}.Client.ApiClients;
 
-public sealed class {{ENTITY}}ApiClient(IHttpClientFactory httpClientFactory)
-    : BaseApiClient(httpClientFactory, HttpClientNames.Api)
+public sealed class {{ENTITY}}ApiClient({{ARCH_APICLIENT_CTOR}})
+    {{ARCH_APICLIENT_BASE}}
 {
-    public Task<Result<{{ENTITY}}>> GetAsync({{ID_TYPE}} id, CancellationToken ct) =>
+    public Task<{{ARCH_RESULT}}<{{ENTITY}}>> GetAsync({{ID_TYPE}} id, CancellationToken ct) =>
         GetAsync<{{ENTITY}}>($"api/{{entity}}/{id}", ct);
 
-    public Task<Result<{{ENTITY}}>> CreateAsync({{ENTITY}} {{ENTITY_CAMEL}}, CancellationToken ct) =>
+    public Task<{{ARCH_RESULT}}<{{ENTITY}}>> CreateAsync({{ENTITY}} {{ENTITY_CAMEL}}, CancellationToken ct) =>
         PostAsync<{{ENTITY}}, {{ENTITY}}>("api/{{entity}}", {{ENTITY_CAMEL}}, ct);
 
-    public Task<Result<{{ENTITY}}>> UpdateAsync({{ENTITY}} {{ENTITY_CAMEL}}, CancellationToken ct) =>
+    public Task<{{ARCH_RESULT}}<{{ENTITY}}>> UpdateAsync({{ENTITY}} {{ENTITY_CAMEL}}, CancellationToken ct) =>
         PutAsync($"api/{{entity}}/{{{ENTITY_CAMEL}}.Id}", {{ENTITY_CAMEL}}, ct);
 
-    public Task<Result<{{ENTITY}}>> DeleteAsync({{ID_TYPE}} id, CancellationToken ct) =>
+    public Task<{{ARCH_RESULT}}<{{ENTITY}}>> DeleteAsync({{ID_TYPE}} id, CancellationToken ct) =>
         DeleteAsync<{{ENTITY}}>($"api/{{entity}}/{id}", ct);
 
-    public Task<Result<IEnumerable<{{ENTITY}}>>> GetAllAsync(CancellationToken ct) =>
+    public Task<{{ARCH_RESULT}}<IEnumerable<{{ENTITY}}>>> GetAllAsync(CancellationToken ct) =>
         GetAsync<IEnumerable<{{ENTITY}}>>("api/{{entity}}", ct);
 {{API_CLIENT_EXTRA_METHODS}}
 }

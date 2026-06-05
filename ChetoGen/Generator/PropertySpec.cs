@@ -33,8 +33,8 @@ internal sealed record PropertySpec(
         "int" or "long" or "short" or "byte" => "InputNumber",
         "decimal" or "double" or "float" => "InputNumber",
         "bool" => "InputCheckbox",
-        "DateTime" or "DateTimeOffset" => "InputDate",
-        "DateOnly" => "InputDate",
+        // InputDate binds DateTime/DateTimeOffset/DateOnly/TimeOnly (it infers the type param from the value).
+        "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" => "InputDate",
         _ => "InputText"
     };
 

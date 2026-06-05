@@ -5,5 +5,5 @@ using {{BASE_NS}}.Application.Models.App;
 namespace {{BASE_NS}}.Api.Controllers;
 
 [Route("api/[controller]")]
-{{AUTHORIZE_ATTR}}public class {{ENTITY}}Controller(I{{ENTITY}}Service {{ENTITY_CAMEL}}Service{{EVENT_BUS_CTOR_PARAM}}, ILogger<{{ENTITY}}Controller> logger)
-    : BaseController<{{ENTITY}}, {{ID_TYPE}}, I{{ENTITY}}Service>({{ENTITY_CAMEL}}Service{{EVENT_BUS_BASE_ARG}}, logger){{CONTROLLER_BODY}}
+{{AUTHORIZE_ATTR}}public class {{ENTITY}}Controller({{ARCH_CONTROLLER_CTOR}})
+    {{ARCH_CONTROLLER_BASE}}{{CONTROLLER_BODY}}

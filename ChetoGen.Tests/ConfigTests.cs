@@ -18,8 +18,11 @@ public class ConfigTests
             Specs.Entity(props: [Specs.Prop("Name", "string", filter: true)], mode: FilterMode.Server),
             Specs.Config("Acme"));
 
-        tokens["PERSISTENCE_USINGS"].Should().Contain("using Acme.Domain.Paging;");
+        // Paging is self-contained now — nothing references an external Domain.Paging project.
+        tokens["PERSISTENCE_USINGS"].Should().NotContain("Domain.Paging");
+        tokens["SERVICE_USINGS"].Should().Contain("using Acme.Application.Models;");
         tokens["SERVICE_USINGS"].Should().Contain("using Acme.Application.Models.App;");
+        tokens["API_CLIENT_EXTRA_USINGS"].Should().Contain("using Acme.Application.Models;");
     }
 
     [Fact]
@@ -93,6 +96,22 @@ public class ConfigTests
         Normalize(resolver.DomainEntity("Order")).Should().EndWith("Domain/Order.cs");
         // a non-overridden key still falls back to the default layout
         Normalize(resolver.ApplicationMapper("Order")).Should().EndWith("Shop.Application.Mappers/OrderMapper.cs");
+    });
+
+    [Fact]
+    public void LoaderDiscoversConfigFromExplicitRoot() => WithTempDir(dir =>
+    {
+        File.WriteAllText(Path.Combine(dir, "Whatever.slnx"), "<Solution />");
+        File.WriteAllText(Path.Combine(dir, ConfigLoader.ConfigFileName), """
+        { "baseNamespace": "Anchored" }
+        """);
+
+        // No startDirectory passed: discovery must follow --root (explicitRoot), not the test's CWD.
+        var loaded = ConfigLoader.Load(explicitRoot: dir);
+
+        loaded.Config.BaseNamespace.Should().Be("Anchored");
+        loaded.ConfigFilePath.Should().NotBeNull();
+        loaded.SolutionRoot.Should().Be(dir);
     });
 
     // ---- template override ---------------------------------------------------------------
